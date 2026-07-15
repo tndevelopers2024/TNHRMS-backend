@@ -61,7 +61,8 @@ server.listen(PORT, () => {
 });
 
 // Database Connection
-let uri = process.env.MONGO_URI || 'mongodb://localhost:27017/tn-hrms';
+// Temporary Hardcode to completely bypass Hostinger's Environment Variables panel
+let uri = 'mongodb+srv://tnhrms:tnhrms%402k26@tnhrms.g7v7ajq.mongodb.net/tnhrms?appName=TNHRMS';
 uri = uri.trim(); // Remove any invisible spaces/newlines from Hostinger
 
 // If Hostinger accidentally decoded '%40' into '@', there will be TWO '@' symbols in the URI.
