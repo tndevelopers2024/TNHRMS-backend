@@ -7,6 +7,7 @@ const Task = require('../models/Task');
 const Leave = require('../models/Leave');
 const Holiday = require('../models/Holiday');
 const Department = require('../models/Department');
+const Payslip = require('../models/Payslip');
 
 // GET all employees
 router.get('/employees', async (req, res) => {
@@ -43,6 +44,7 @@ router.post('/employees', async (req, res) => {
       dob,
       joiningDate,
       salary,
+      salaryHistory: salary ? [{ salary, date: joiningDate ? new Date(joiningDate) : new Date() }] : [],
       emergencyContact
     });
 
@@ -98,6 +100,52 @@ router.delete('/employees/:id', async (req, res) => {
   }
 });
 
+// PUT update an employee
+router.put('/employees/:id', async (req, res) => {
+  const { name, email, department, designation, phone, address, gender, dob, joiningDate, salary, emergencyContact } = req.body;
+  try {
+    const employee = await User.findById(req.params.id);
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    // Check if the new email is already used by another user
+    if (email !== employee.email) {
+      const emailExists = await User.findOne({ email });
+      if (emailExists) {
+        return res.status(400).json({ message: 'Email is already in use by another user' });
+      }
+    }
+
+    employee.name = name || employee.name;
+    employee.email = email || employee.email;
+    employee.department = department || employee.department;
+    employee.designation = designation || employee.designation;
+    employee.phone = phone !== undefined ? phone : employee.phone;
+    employee.address = address !== undefined ? address : employee.address;
+    employee.gender = gender !== undefined ? gender : employee.gender;
+    employee.dob = dob !== undefined ? dob : employee.dob;
+    employee.joiningDate = joiningDate !== undefined ? joiningDate : employee.joiningDate;
+    
+    if (salary !== undefined && salary !== employee.salary) {
+      employee.salaryHistory.push({ salary, date: new Date() });
+    }
+    employee.salary = salary !== undefined ? salary : employee.salary;
+    
+    employee.emergencyContact = emergencyContact !== undefined ? emergencyContact : employee.emergencyContact;
+
+    await employee.save();
+
+    res.json({ message: 'Employee updated successfully', employee: {
+      _id: employee._id,
+      name: employee.name,
+      email: employee.email,
+      department: employee.department,
+      designation: employee.designation
+    }});
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET employee details (with tasks)
 router.get('/employees/:id/details', async (req, res) => {
   try {
@@ -135,6 +183,16 @@ router.post('/tasks', async (req, res) => {
       status: 'Pending'
     });
     await newTask.save();
+
+    // Emit notification to employee
+    const io = req.app.get('io');
+    if (io) {
+      io.to(employee.toString()).emit('notification', { 
+        message: 'A new task has been assigned to you.', 
+        type: 'task' 
+      });
+    }
+
     res.status(201).json({ message: 'Task assigned successfully', task: newTask });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -188,6 +246,16 @@ router.put('/leaves/:leaveId', async (req, res) => {
       { new: true }
     );
     if (!leave) return res.status(404).json({ message: 'Leave not found' });
+
+    // Emit notification to employee
+    const io = req.app.get('io');
+    if (io) {
+      io.to(leave.employee.toString()).emit('notification', { 
+        message: `Your leave request has been ${status.toLowerCase()}.`, 
+        type: 'leave' 
+      });
+    }
+
     res.json({ message: 'Leave status updated successfully', leave });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -211,6 +279,22 @@ router.post('/holidays', async (req, res) => {
     const newHoliday = new Holiday({ name, date, type });
     await newHoliday.save();
     res.status(201).json({ message: 'Holiday created successfully', holiday: newHoliday });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT update a holiday
+router.put('/holidays/:id', async (req, res) => {
+  const { name, date, type } = req.body;
+  try {
+    const holiday = await Holiday.findByIdAndUpdate(
+      req.params.id,
+      { name, date, type },
+      { new: true }
+    );
+    if (!holiday) return res.status(404).json({ message: 'Holiday not found' });
+    res.json({ message: 'Holiday updated successfully', holiday });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -295,6 +379,127 @@ router.put('/departments/:id', async (req, res) => {
     );
 
     res.json({ message: 'Department updated successfully', department });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET payroll calculations for specific month or current month
+router.get('/payroll', async (req, res) => {
+  try {
+    const employees = await User.find({ role: 'employee' }).select('-password');
+    const reqMonth = req.query.month;
+    const reqYear = req.query.year;
+    
+    const targetMonth = reqMonth !== undefined ? parseInt(reqMonth, 10) : new Date().getMonth();
+    const targetYear = reqYear !== undefined ? parseInt(reqYear, 10) : new Date().getFullYear();
+    const monthString = `${targetMonth + 1}-${targetYear}`;
+    
+    const startOfMonth = new Date(targetYear, targetMonth, 1);
+    const endOfMonth = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59);
+
+    const leaves = await Leave.find({
+      type: 'Loss of Pay',
+      status: 'Approved',
+      startDate: { $gte: startOfMonth, $lte: endOfMonth }
+    });
+
+    const payslips = await Payslip.find({ month: monthString });
+
+    const payrollData = employees.map(emp => {
+      const payslip = payslips.find(p => p.employee.toString() === emp._id.toString());
+      const status = payslip ? payslip.status : 'Pending';
+      const monthStr = monthString;
+      
+      let finalLpa, finalMonthly, finalLopDays, finalDeduction, finalNetPay;
+
+      if (payslip && payslip.lpa !== undefined) {
+        // Use frozen values if a payslip was already generated/saved
+        finalLpa = payslip.lpa;
+        finalMonthly = payslip.monthlySalary;
+        finalLopDays = payslip.lopDays;
+        finalDeduction = payslip.totalDeduction;
+        finalNetPay = payslip.netPay;
+      } else {
+        // Find the applicable salary for this historical month from salaryHistory
+        const endOfMonthTarget = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59);
+        let applicableSalary = emp.salary || 0;
+        
+        if (emp.salaryHistory && emp.salaryHistory.length > 0) {
+          const sortedHistory = [...emp.salaryHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
+          let foundSalary = null;
+          for (const hist of sortedHistory) {
+            if (new Date(hist.date) <= endOfMonthTarget) {
+              foundSalary = hist.salary;
+            }
+          }
+          if (foundSalary !== null) {
+            applicableSalary = foundSalary;
+          }
+        }
+
+        // Calculate dynamically based on the applicable salary
+        const empLeaves = leaves.filter(l => l.employee.toString() === emp._id.toString());
+        finalLopDays = empLeaves.reduce((acc, curr) => acc + curr.days, 0);
+        finalLpa = applicableSalary;
+        finalMonthly = finalLpa ? Math.round(finalLpa / 12) : 0;
+        const perDayLopRate = finalMonthly ? Math.round(finalMonthly / 30) : 0;
+        finalDeduction = finalLopDays * perDayLopRate;
+        finalNetPay = finalMonthly - finalDeduction;
+      }
+
+      return {
+        _id: emp._id,
+        name: emp.name,
+        email: emp.email,
+        department: emp.department,
+        designation: emp.designation,
+        lpa: finalLpa,
+        monthlySalary: finalMonthly,
+        perDayLopRate: finalMonthly ? Math.round(finalMonthly / 30) : 0,
+        lopDays: finalLopDays,
+        totalDeduction: finalDeduction,
+        netPay: finalNetPay,
+        status,
+        monthStr
+      };
+    });
+
+    res.json(payrollData);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /payroll/status - Update payslip status and freeze values
+router.post('/payroll/status', async (req, res) => {
+  const { employeeId, month, netPay, status, lpa, monthlySalary, lopDays, totalDeduction } = req.body;
+  try {
+    let payslip = await Payslip.findOne({ employee: employeeId, month });
+    
+    if (payslip) {
+      payslip.status = status;
+      payslip.netPay = netPay;
+      payslip.lpa = lpa;
+      payslip.monthlySalary = monthlySalary;
+      payslip.lopDays = lopDays;
+      payslip.totalDeduction = totalDeduction;
+      await payslip.save();
+    } else {
+      payslip = new Payslip({
+        employee: employeeId,
+        month,
+        netPay,
+        status,
+        lpa,
+        monthlySalary,
+        lopDays,
+        totalDeduction
+      });
+      await payslip.save();
+    }
+    
+    res.json({ message: 'Payroll status and values frozen successfully', payslip });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

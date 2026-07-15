@@ -74,6 +74,16 @@ router.put('/tasks/status', async (req, res) => {
         await Task.findByIdAndUpdate(update.id, updateData);
       }
     }
+
+    // Emit notification to admin
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin').emit('notification', { 
+        message: 'An employee updated their task status.', 
+        type: 'task_update' 
+      });
+    }
+
     res.json({ message: 'Tasks updated successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -167,6 +177,16 @@ router.post('/leaves', async (req, res) => {
       attachment
     });
     const savedLeave = await newLeave.save();
+
+    // Emit notification to admin
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin').emit('notification', { 
+        message: 'A new leave application has been submitted.', 
+        type: 'leave_application' 
+      });
+    }
+
     res.status(201).json(savedLeave);
   } catch (err) {
     res.status(500).json({ message: err.message });

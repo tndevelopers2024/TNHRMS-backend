@@ -45,6 +45,10 @@ const userSchema = new mongoose.Schema({
   salary: {
     type: Number,
   },
+  salaryHistory: [{
+    salary: Number,
+    date: { type: Date, default: Date.now }
+  }],
   emergencyContact: {
     name: String,
     relationship: String,
@@ -56,6 +60,12 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true,
+  },
+  resetPasswordOTP: {
+    type: String,
+  },
+  resetPasswordExpires: {
+    type: Date,
   },
 }, { timestamps: true });
 
