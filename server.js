@@ -55,14 +55,16 @@ app.get('/', (req, res) => {
   res.send('HRMS Backend is running');
 });
 
+// Start Server immediately for Hostinger (must call listen within 3 seconds)
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
 // Database Connection
 mongoose
   .connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tn-hrms')
   .then(() => {
     console.log('Connected to MongoDB');
-    server.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-    });
   })
   .catch((err) => {
     console.error('Error connecting to MongoDB:', err.message);
