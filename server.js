@@ -61,8 +61,11 @@ server.listen(PORT, () => {
 });
 
 // Database Connection
+const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/tn-hrms';
+console.log('Attempting to connect to MongoDB. URI starts with:', uri.substring(0, 25));
+
 mongoose
-  .connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tn-hrms')
+  .connect(uri)
   .then(() => {
     console.log('Connected to MongoDB');
   })
