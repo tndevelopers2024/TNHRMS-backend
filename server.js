@@ -61,15 +61,9 @@ server.listen(PORT, () => {
 });
 
 // Database Connection
-let uri = process.env.MONGO_URI || 'mongodb://localhost:27017/tn-hrms';
-uri = uri.trim(); // Remove any invisible spaces/newlines from Hostinger
-
-// If Hostinger accidentally decoded '%40' into '@', there will be TWO '@' symbols in the URI.
-// Mongoose requires the first one (in the password) to be encoded as '%40'.
-if (uri.indexOf('@') !== uri.lastIndexOf('@')) {
-  console.log("Hostinger decoded our password! Fixing it automatically...");
-  uri = uri.replace('@', '%40'); // Replaces ONLY the first @ symbol
-}
+// We encode the password dynamically to prevent Hostinger from corrupting special characters (like @)
+const password = encodeURIComponent(process.env.MONGO_PASSWORD || "tnhrms@2k26");
+const uri = `mongodb+srv://tnhrms:${password}@tnhrms.g7v7ajq.mongodb.net/tnhrms?appName=TNHRMS`;
 
 mongoose
   .connect(uri)
