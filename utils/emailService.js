@@ -52,12 +52,12 @@ const sendStylishEmail = async (to, subject, title, intro, contentHtml = '', out
     attachments: [
       {
         filename: 'logo.png',
-        path: path.join(__dirname, '../../frontend/public/logo.png'),
+        path: path.join(__dirname, '../public/images/logo.png'),
         cid: 'logo'
       },
       {
         filename: 'favicon.jpg',
-        path: path.join(__dirname, '../../frontend/public/favicon.jpg'),
+        path: path.join(__dirname, '../public/images/favicon.jpg'),
         cid: 'favicon'
       }
     ]
