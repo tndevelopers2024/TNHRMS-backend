@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const { sendStylishEmail } = require('../utils/emailService');
 const User = require('../models/User');
 const Task = require('../models/Task');
 const Leave = require('../models/Leave');
@@ -52,22 +52,22 @@ router.post('/employees', async (req, res) => {
 
     // Send email with password
     try {
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS
-        }
-      });
-
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'Welcome to TN HRMS - Your Account Details',
-        text: `Hello ${name},\n\nYour account has been created successfully.\n\nYour login details are:\nEmail: ${email}\nPassword: ${generatedPassword}\n\nPlease log in and change your password as soon as possible.\n\nBest regards,\nAdmin Team`
-      };
-
-      await transporter.sendMail(mailOptions);
+      const contentHtml = `
+        <div style="background-color: #f8fafc; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <p style="margin: 0 0 15px 0; color: #475569; font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: 1px;">Your Login Credentials</p>
+          <p style="margin: 0 0 10px 0; color: #1e293b; font-size: 15px;">Email: <strong style="color: #4f46e5;">${email}</strong></p>
+          <p style="margin: 0; color: #1e293b; font-size: 15px;">Password: <span style="font-family: monospace; font-size: 18px; font-weight: bold; background: #e0e7ff; padding: 4px 8px; border-radius: 4px; color: #3730a3; letter-spacing: 1px;">${generatedPassword}</span></p>
+        </div>
+      `;
+      
+      await sendStylishEmail(
+        email,
+        'Welcome to TN HRMS - Your Account Details',
+        `Welcome to the Team, ${name}! 🎉`,
+        `Your account on the TN HRMS platform has been created successfully. We're excited to have you on board.`,
+        contentHtml,
+        `Please log in using the credentials above and change your password as soon as possible for security reasons.`
+      );
     } catch (emailErr) {
       console.error('Error sending email:', emailErr);
     }
@@ -163,6 +163,34 @@ router.get('/employees/:id/details', async (req, res) => {
   }
 });
 
+// GET today's attendance for all employees
+router.get('/attendance/today', async (req, res) => {
+  try {
+    const now = new Date();
+    const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    
+    // Get all employees
+    const employees = await User.find({ role: 'employee' }).select('name department designation email profileImage');
+    
+    // Get today's attendance records
+    const Attendance = require('../models/Attendance');
+    const todayAttendance = await Attendance.find({ date: dateStr });
+    
+    // Combine
+    const result = employees.map(emp => {
+      const record = todayAttendance.find(a => a.employee.toString() === emp._id.toString());
+      return {
+        employee: emp,
+        attendance: record || null
+      };
+    });
+    
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET all tasks (populated with employee info)
 router.get('/tasks', async (req, res) => {
   try {
@@ -191,6 +219,21 @@ router.post('/tasks', async (req, res) => {
         message: 'A new task has been assigned to you.', 
         type: 'task' 
       });
+    }
+
+    // Notify Employee via Email
+    const user = await User.findById(employee);
+    if (user) {
+      await sendStylishEmail(
+        user.email,
+        'New Task Assigned to You',
+        'New Task Assignment 📋',
+        `Hello ${user.name}, you have been assigned a new task by the admin.`,
+        `<div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; text-align: left; display: inline-block;">
+           <p style="margin: 5px 0;"><strong>Description:</strong> ${description}</p>
+         </div>`,
+        `Please log in to the HRMS dashboard to view and start working on this task.`
+      );
     }
 
     res.status(201).json({ message: 'Task assigned successfully', task: newTask });
@@ -244,16 +287,34 @@ router.put('/leaves/:leaveId', async (req, res) => {
       req.params.leaveId,
       { status },
       { new: true }
-    );
+    ).populate('employee', 'name email');
+    
     if (!leave) return res.status(404).json({ message: 'Leave not found' });
 
     // Emit notification to employee
     const io = req.app.get('io');
     if (io) {
-      io.to(leave.employee.toString()).emit('notification', { 
+      io.to(leave.employee._id.toString()).emit('notification', { 
         message: `Your leave request has been ${status.toLowerCase()}.`, 
         type: 'leave' 
       });
+    }
+
+    // Notify Employee via Email
+    if (leave.employee) {
+      const color = status === 'Approved' ? '#16a34a' : '#dc2626';
+      await sendStylishEmail(
+        leave.employee.email,
+        `Leave Request ${status}`,
+        `Leave Request ${status} 🏖️`,
+        `Hello ${leave.employee.name}, your recent leave request has been updated.`,
+        `<div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; text-align: left; display: inline-block;">
+           <p style="margin: 5px 0;"><strong>Status:</strong> <span style="color: ${color}; font-weight: bold;">${status}</span></p>
+           <p style="margin: 5px 0;"><strong>From:</strong> ${new Date(leave.startDate).toLocaleDateString()}</p>
+           <p style="margin: 5px 0;"><strong>To:</strong> ${new Date(leave.endDate).toLocaleDateString()}</p>
+         </div>`,
+        `Log in to the HRMS portal for more details.`
+      );
     }
 
     res.json({ message: 'Leave status updated successfully', leave });

@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
+const { sendStylishEmail } = require('../utils/emailService');
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -53,23 +53,20 @@ router.post('/forgot-password', async (req, res) => {
     user.resetPasswordExpires = Date.now() + 10 * 60 * 1000;
     await user.save();
 
-    // Configure nodemailer
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+    const contentHtml = `
+      <div style="background-color: #e0e7ff; padding: 20px 40px; border-radius: 12px; display: inline-block; border: 1px dashed #a5b4fc; margin-bottom: 30px;">
+        <span style="font-size: 36px; font-weight: 800; letter-spacing: 6px; color: #4f46e5; font-family: monospace;">${otp}</span>
+      </div>
+    `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: user.email,
-      subject: 'Password Reset OTP',
-      text: `Your password reset OTP is ${otp}. It will expire in 10 minutes.`,
-    };
-
-    await transporter.sendMail(mailOptions);
+    await sendStylishEmail(
+      user.email,
+      'TN HRMS - Password Reset OTP',
+      'Password Reset Request 🔒',
+      'We received a request to reset your password. Use the verification code below to securely change your password.',
+      contentHtml,
+      `This code will expire in <strong style="color: #ea580c; font-weight: 600;">10 minutes</strong>.<br><br><span style="font-size: 13px;">If you did not request a password reset, you can safely ignore this email.</span>`
+    );
     res.json({ message: 'OTP sent to your email' });
   } catch (error) {
     console.error('Forgot password error:', error);

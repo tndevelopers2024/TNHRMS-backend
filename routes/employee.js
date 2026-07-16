@@ -6,6 +6,7 @@ const Leave = require('../models/Leave');
 const Attendance = require('../models/Attendance');
 const Announcement = require('../models/Announcement');
 const Payslip = require('../models/Payslip');
+const { sendStylishEmail } = require('../utils/emailService');
 
 // GET all tasks for the logged-in employee
 router.get('/tasks/:userId', async (req, res) => {
@@ -117,6 +118,19 @@ router.post('/attendance/checkin', async (req, res) => {
         checkInTime: new Date()
       });
       await attendance.save();
+      
+      // Notify Admin via Email
+      const user = await User.findById(userId);
+      if (user) {
+        await sendStylishEmail(
+          process.env.EMAIL_USER,
+          `Check-In Alert: ${user.name}`,
+          `Employee Checked In ⏱️`,
+          `${user.name} has just checked in for the day.`,
+          `<div style="font-size: 18px; font-weight: bold; color: #4f46e5;">Check-In Time: ${new Date().toLocaleTimeString()}</div>`,
+          `You can view the detailed attendance logs in the Admin Dashboard.`
+        );
+      }
     }
     res.json({ message: 'Checked in successfully', record: attendance });
   } catch (err) {
@@ -147,6 +161,23 @@ router.post('/attendance/checkout', async (req, res) => {
     attendance.totalHours = parseFloat(hours.toFixed(2));
     
     await attendance.save();
+    
+    // Notify Admin via Email
+    const user = await User.findById(userId);
+    if (user) {
+      await sendStylishEmail(
+        process.env.EMAIL_USER,
+        `Check-Out Alert: ${user.name}`,
+        `Employee Checked Out 🏁`,
+        `${user.name} has checked out.`,
+        `<div style="background-color: #f8fafc; padding: 15px; border-radius: 8px;">
+           <p style="margin: 0; color: #1e293b;">Total Hours Worked: <strong style="color: #4f46e5;">${attendance.totalHours} hrs</strong></p>
+           <p style="margin: 5px 0 0; color: #64748b;">Summary: ${summary || 'No summary provided.'}</p>
+         </div>`,
+        `You can view the detailed attendance logs in the Admin Dashboard.`
+      );
+    }
+    
     res.json({ message: 'Checked out successfully', record: attendance });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -185,6 +216,24 @@ router.post('/leaves', async (req, res) => {
         message: 'A new leave application has been submitted.', 
         type: 'leave_application' 
       });
+    }
+
+    // Notify Admin via Email
+    const user = await User.findById(employee);
+    if (user) {
+      await sendStylishEmail(
+        process.env.EMAIL_USER,
+        `New Leave Application: ${user.name}`,
+        `New Leave Request 📝`,
+        `${user.name} has submitted a new leave application.`,
+        `<div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; text-align: left; display: inline-block;">
+           <p style="margin: 5px 0;"><strong>Type:</strong> ${type}</p>
+           <p style="margin: 5px 0;"><strong>Duration:</strong> ${days} day(s)</p>
+           <p style="margin: 5px 0;"><strong>From:</strong> ${new Date(startDate).toLocaleDateString()} <strong>To:</strong> ${new Date(endDate).toLocaleDateString()}</p>
+           <p style="margin: 5px 0;"><strong>Reason:</strong> ${reason}</p>
+         </div>`,
+        `Please review the request in the Admin Dashboard.`
+      );
     }
 
     res.status(201).json(savedLeave);
