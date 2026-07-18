@@ -3,10 +3,13 @@ const router = express.Router();
 const Task = require('../models/Task');
 const User = require('../models/User');
 const Leave = require('../models/Leave');
+const Notification = require('../models/Notification');
 const Attendance = require('../models/Attendance');
 const Announcement = require('../models/Announcement');
 const Payslip = require('../models/Payslip');
+const Holiday = require('../models/Holiday');
 const { sendStylishEmail } = require('../utils/emailService');
+const upload = require('../utils/upload');
 
 // GET all tasks for the logged-in employee
 router.get('/tasks/:userId', async (req, res) => {
@@ -30,8 +33,12 @@ router.get('/profile/:userId', async (req, res) => {
 });
 
 // PUT employee profile image
-router.put('/update-profile/:userId', async (req, res) => {
-  const { profileImage } = req.body;
+router.put('/update-profile/:userId', upload.single('profileImage'), async (req, res) => {
+  let profileImage = req.body.profileImage;
+  if (req.file) {
+    profileImage = `/uploads/${req.file.filename}`; // Storing relative path is better
+  }
+  
   try {
     const user = await User.findByIdAndUpdate(req.params.userId, { profileImage }, { new: true }).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -160,6 +167,14 @@ router.post('/attendance/checkout', async (req, res) => {
     const hours = msDiff / (1000 * 60 * 60);
     attendance.totalHours = parseFloat(hours.toFixed(2));
     
+    if (attendance.totalHours < 4) {
+      attendance.status = 'Auto-Leave';
+    } else if (attendance.totalHours < 8) {
+      attendance.status = 'Half-Day Leave';
+    } else {
+      attendance.status = 'Present';
+    }
+    
     await attendance.save();
     
     // Notify Admin via Email
@@ -195,9 +210,52 @@ router.get('/leaves/:userId', async (req, res) => {
 });
 
 // POST a new leave application
-router.post('/leaves', async (req, res) => {
-  const { employee, type, startDate, endDate, days, reason, attachment } = req.body;
+router.post('/leaves', upload.single('attachment'), async (req, res) => {
+  const { employee, type, startDate, endDate, days, reason } = req.body;
+  let attachment = req.body.attachment;
+  
+  if (req.file) {
+    attachment = `/uploads/${req.file.filename}`;
+  }
+
   try {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    start.setHours(0, 0, 0, 0);
+
+    if (end < start) {
+      return res.status(400).json({ message: "End date cannot be before start date." });
+    }
+
+    if (start < today && type !== "Sick Leave") {
+      return res.status(400).json({ message: `${type} must be applied in advance. Only Sick Leave can be applied for past dates.` });
+    }
+
+    const leaves = await Leave.find({ employee });
+    const usedLeaves = leaves
+      .filter(l => l.type === type && (l.status === 'Approved' || l.status === 'Pending'))
+      .reduce((acc, curr) => acc + (curr.days || 0), 0);
+
+    const balanceConfig = {
+      "Casual Leave": 10,
+      "Sick Leave": 10,
+      "Earned Leave": 15
+    };
+
+    let totalUsed = usedLeaves;
+    if (type === 'Casual Leave') {
+      const Attendance = require('../models/Attendance');
+      const autoLeavesCount = await Attendance.countDocuments({ employee, status: 'Auto-Leave' });
+      totalUsed += autoLeavesCount;
+    }
+
+    const maxDays = balanceConfig[type] || 0;
+    if (days > (maxDays - totalUsed)) {
+      return res.status(400).json({ message: `You only have ${maxDays - totalUsed} day(s) of ${type} remaining.` });
+    }
+
     const newLeave = new Leave({
       employee,
       type,
@@ -278,6 +336,111 @@ router.get('/payslips/:userId', async (req, res) => {
   try {
     const payslips = await Payslip.find({ employee: req.params.userId }).sort({ createdAt: -1 });
     res.json(payslips);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET upcoming holiday
+router.get('/holidays/upcoming', async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const upcomingHoliday = await Holiday.findOne({ date: { $gte: today } }).sort({ date: 1 });
+    res.json(upcomingHoliday);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT full employee profile (with documents)
+const documentFields = upload.fields([
+  { name: 'panCard', maxCount: 1 },
+  { name: 'aadhaarCard', maxCount: 1 },
+  { name: 'passport', maxCount: 1 },
+  { name: 'photograph', maxCount: 1 },
+  { name: 'cancelledCheque', maxCount: 1 },
+  { name: 'form16', maxCount: 1 },
+  { name: 'tenthMarkSheet', maxCount: 1 },
+  { name: 'twelfthMarkSheet', maxCount: 1 },
+  { name: 'diplomaCertificate', maxCount: 1 },
+  { name: 'degreeCertificate', maxCount: 1 },
+  { name: 'degreeMarkSheet', maxCount: 1 },
+  { name: 'postgraduateCertificate', maxCount: 1 },
+  { name: 'relievingLetter', maxCount: 1 },
+  { name: 'experienceCertificate', maxCount: 1 },
+  { name: 'salarySlip', maxCount: 1 },
+  { name: 'offerLetter', maxCount: 1 }
+]);
+
+router.put('/profile-details/:userId', documentFields, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Update text fields
+    const {
+      name, dob, gender, maritalStatus, address, phone, email, bloodGroup,
+      accountHolderName, accountNumber, bankName, ifscCode, uan,
+      emergencyContactName, emergencyContactRelationship, emergencyContactPhone,
+      professionalReferences // JSON string
+    } = req.body;
+
+    const pendingUpdate = {
+      name, dob, gender, maritalStatus, address, phone, email, bloodGroup,
+      bankingDetails: {
+        ...(user.bankingDetails || {}),
+        ...(accountHolderName && { accountHolderName }),
+        ...(accountNumber && { accountNumber }),
+        ...(bankName && { bankName }),
+        ...(ifscCode && { ifscCode }),
+        ...(uan && { uan }),
+      },
+      emergencyContact: {
+        ...(user.emergencyContact || {}),
+        ...(emergencyContactName && { name: emergencyContactName }),
+        ...(emergencyContactRelationship && { relationship: emergencyContactRelationship }),
+        ...(emergencyContactPhone && { phone: emergencyContactPhone }),
+      }
+    };
+
+    if (professionalReferences) {
+      try {
+        pendingUpdate.professionalReferences = JSON.parse(professionalReferences);
+      } catch (e) {
+        console.error("Failed to parse references:", e);
+      }
+    }
+
+    // Process uploaded files
+    pendingUpdate.documents = { ...(user.documents || {}) };
+    if (req.files) {
+      for (const [fieldname, files] of Object.entries(req.files)) {
+        if (files && files.length > 0) {
+          pendingUpdate.documents[fieldname] = '/uploads/' + files[0].filename;
+        }
+      }
+    }
+
+    user.pendingProfileUpdates = pendingUpdate;
+    // We must tell mongoose that the mixed type field has changed
+    user.markModified('pendingProfileUpdates');
+    
+    await user.save();
+
+    // Create notification for admin
+    const notif = await Notification.create({
+      recipient: 'admin',
+      title: 'Profile Update Submitted',
+      message: `${user.name} has submitted profile updates for review.`,
+      type: 'profile_update',
+      relatedUser: user._id
+    });
+    
+    const io = req.app.get('io');
+    if (io) io.to('admin').emit('notification', notif);
+
+    res.json(user);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

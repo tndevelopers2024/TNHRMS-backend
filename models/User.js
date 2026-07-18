@@ -57,9 +57,52 @@ const userSchema = new mongoose.Schema({
   profileImage: {
     type: String, // Store base64 encoded image string
   },
+  maritalStatus: {
+    type: String,
+    enum: ['Single', 'Married', 'Divorced', 'Widowed', 'Other'],
+  },
+  bloodGroup: {
+    type: String,
+  },
+  bankingDetails: {
+    accountHolderName: String,
+    accountNumber: String,
+    bankName: String,
+    ifscCode: String,
+    uan: String,
+  },
+  documents: {
+    panCard: String,
+    aadhaarCard: String,
+    passport: String,
+    photograph: String,
+    cancelledCheque: String,
+    form16: String,
+    tenthMarkSheet: String,
+    twelfthMarkSheet: String,
+    diplomaCertificate: String,
+    degreeCertificate: String,
+    degreeMarkSheet: String,
+    postgraduateCertificate: String,
+    relievingLetter: String,
+    experienceCertificate: String,
+    salarySlip: String,
+    offerLetter: String,
+  },
+  professionalReferences: [{
+    name: String,
+    designation: String,
+    company: String,
+    contactNumber: String,
+    email: String,
+  }],
   isActive: {
     type: Boolean,
     default: true,
+  },
+  pendingProfileUpdates: {
+    type: mongoose.Schema.Types.Mixed, // Stores pending modifications until admin approval
+    default: null
   },
   resetPasswordOTP: {
     type: String,

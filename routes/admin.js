@@ -8,6 +8,7 @@ const Leave = require('../models/Leave');
 const Holiday = require('../models/Holiday');
 const Department = require('../models/Department');
 const Payslip = require('../models/Payslip');
+const Notification = require('../models/Notification');
 
 // GET all employees
 router.get('/employees', async (req, res) => {
@@ -177,16 +178,48 @@ router.get('/attendance/today', async (req, res) => {
     const todayAttendance = await Attendance.find({ date: dateStr });
     
     // Combine
-    const result = employees.map(emp => {
-      const record = todayAttendance.find(a => a.employee.toString() === emp._id.toString());
-      return {
-        employee: emp,
-        attendance: record || null
-      };
+    const employeesWithAttendance = employees.map(emp => {
+      const att = todayAttendance.find(a => a.employee.toString() === emp._id.toString());
+      return { employee: emp, attendance: att || null };
     });
-    
-    res.json(result);
+    res.json(employeesWithAttendance);
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT mark attendance as present
+router.put('/attendance/:id/mark-present', async (req, res) => {
+  try {
+    const Attendance = require('../models/Attendance');
+    const record = await Attendance.findById(req.params.id);
+    if (!record) return res.status(404).json({ message: 'Attendance record not found' });
+
+    // If it was Auto-Leave, we need to refund the deducted salary
+    if (record.status === 'Auto-Leave') {
+      const user = await User.findById(record.employee);
+      if (user && user.salary) {
+        // Add back 1/30th of the salary that was deducted
+        const deduction = Math.round(user.salary / 29);
+        user.salary = user.salary + deduction;
+        await user.save();
+      }
+    }
+
+    // Mark as present and simulate 8 hours of work
+    record.status = 'Present';
+    if (!record.checkOutTime && record.checkInTime) {
+      const checkout = new Date(record.checkInTime);
+      checkout.setHours(checkout.getHours() + 8);
+      record.checkOutTime = checkout;
+      record.totalHours = 8;
+    }
+    record.summary = 'Admin marked as Present (Technical Issue)';
+    
+    await record.save();
+    res.json({ message: 'Attendance marked as present successfully', record });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -288,8 +321,25 @@ router.put('/leaves/:leaveId', async (req, res) => {
       { status },
       { new: true }
     ).populate('employee', 'name email');
-    
     if (!leave) return res.status(404).json({ message: 'Leave not found' });
+
+    if (status === 'Approved') {
+      const Attendance = require('../models/Attendance');
+      const start = new Date(leave.startDate);
+      const end = new Date(leave.endDate);
+      const datesToClear = [];
+      let current = new Date(start);
+      while (current <= end) {
+        datesToClear.push(current.toISOString().split('T')[0]);
+        current.setDate(current.getDate() + 1);
+      }
+      
+      await Attendance.deleteMany({
+        employee: leave.employee._id,
+        date: { $in: datesToClear },
+        status: 'Auto-Leave'
+      });
+    }
 
     // Emit notification to employee
     const io = req.app.get('io');
@@ -561,6 +611,89 @@ router.post('/payroll/status', async (req, res) => {
     }
     
     res.json({ message: 'Payroll status and values frozen successfully', payslip });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+// POST /employees/:id/approve-profile
+router.post('/employees/:id/approve-profile', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user.pendingProfileUpdates) {
+      return res.status(400).json({ message: 'No pending updates found' });
+    }
+
+    const updates = user.pendingProfileUpdates;
+
+    if (updates.name) user.name = updates.name;
+    if (updates.dob) user.dob = updates.dob;
+    if (updates.gender) user.gender = updates.gender;
+    if (updates.maritalStatus) user.maritalStatus = updates.maritalStatus;
+    if (updates.address) user.address = updates.address;
+    if (updates.phone) user.phone = updates.phone;
+    if (updates.email) user.email = updates.email;
+    if (updates.bloodGroup) user.bloodGroup = updates.bloodGroup;
+
+    if (updates.bankingDetails) {
+      user.bankingDetails = updates.bankingDetails;
+    }
+    
+    if (updates.emergencyContact) {
+      user.emergencyContact = updates.emergencyContact;
+    }
+
+    if (updates.professionalReferences) {
+      user.professionalReferences = updates.professionalReferences;
+    }
+
+    if (updates.documents) {
+      user.documents = updates.documents;
+    }
+
+    user.pendingProfileUpdates = null;
+    user.markModified('pendingProfileUpdates');
+    await user.save();
+    
+    const notif = await Notification.create({
+      recipient: user._id,
+      title: 'Profile Updates Approved',
+      message: 'Your recent profile updates have been approved by the admin and are now live.',
+      type: 'profile_update',
+      relatedUser: user._id
+    });
+    
+    const io = req.app.get('io');
+    if (io) io.to(user._id.toString()).emit('notification', notif);
+    
+    res.json({ message: 'Profile updates approved successfully', user });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /employees/:id/reject-profile
+router.post('/employees/:id/reject-profile', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    user.pendingProfileUpdates = null;
+    user.markModified('pendingProfileUpdates');
+    await user.save();
+    
+    const notif = await Notification.create({
+      recipient: user._id,
+      title: 'Profile Updates Rejected',
+      message: 'Your recent profile updates were rejected by the admin.',
+      type: 'profile_update',
+      relatedUser: user._id
+    });
+    
+    const io = req.app.get('io');
+    if (io) io.to(user._id.toString()).emit('notification', notif);
+    
+    res.json({ message: 'Profile updates rejected successfully', user });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
