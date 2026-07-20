@@ -110,6 +110,10 @@ const userSchema = new mongoose.Schema({
   resetPasswordExpires: {
     type: Date,
   },
+  earnedLeaves: {
+    type: Number,
+    default: 0,
+  },
 }, { timestamps: true });
 
 // Hash password before saving

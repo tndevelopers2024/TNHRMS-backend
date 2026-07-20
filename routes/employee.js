@@ -126,18 +126,7 @@ router.post('/attendance/checkin', async (req, res) => {
       });
       await attendance.save();
       
-      // Notify Admin via Email
-      const user = await User.findById(userId);
-      if (user) {
-        await sendStylishEmail(
-          process.env.EMAIL_USER,
-          `Check-In Alert: ${user.name}`,
-          `Employee Checked In ⏱️`,
-          `${user.name} has just checked in for the day.`,
-          `<div style="font-size: 18px; font-weight: bold; color: #4f46e5;">Check-In Time: ${new Date().toLocaleTimeString()}</div>`,
-          `You can view the detailed attendance logs in the Admin Dashboard.`
-        );
-      }
+      // Removed check-in email as per user request
     }
     res.json({ message: 'Checked in successfully', record: attendance });
   } catch (err) {
@@ -177,21 +166,7 @@ router.post('/attendance/checkout', async (req, res) => {
     
     await attendance.save();
     
-    // Notify Admin via Email
-    const user = await User.findById(userId);
-    if (user) {
-      await sendStylishEmail(
-        process.env.EMAIL_USER,
-        `Check-Out Alert: ${user.name}`,
-        `Employee Checked Out 🏁`,
-        `${user.name} has checked out.`,
-        `<div style="background-color: #f8fafc; padding: 15px; border-radius: 8px;">
-           <p style="margin: 0; color: #1e293b;">Total Hours Worked: <strong style="color: #4f46e5;">${attendance.totalHours} hrs</strong></p>
-           <p style="margin: 5px 0 0; color: #64748b;">Summary: ${summary || 'No summary provided.'}</p>
-         </div>`,
-        `You can view the detailed attendance logs in the Admin Dashboard.`
-      );
-    }
+    // Removed check-out email as per user request
     
     res.json({ message: 'Checked out successfully', record: attendance });
   } catch (err) {
@@ -238,17 +213,21 @@ router.post('/leaves', upload.single('attachment'), async (req, res) => {
       .filter(l => l.type === type && (l.status === 'Approved' || l.status === 'Pending'))
       .reduce((acc, curr) => acc + (curr.days || 0), 0);
 
+    const userObj = await User.findById(employee);
+    const earnedLeavesCount = userObj ? (userObj.earnedLeaves || 0) : 0;
+
     const balanceConfig = {
-      "Casual Leave": 10,
-      "Sick Leave": 10,
-      "Earned Leave": 15
+      "Casual Leave": 3,
+      "Sick Leave": 6,
+      "Earned Leave": earnedLeavesCount
     };
 
     let totalUsed = usedLeaves;
     if (type === 'Casual Leave') {
       const Attendance = require('../models/Attendance');
       const autoLeavesCount = await Attendance.countDocuments({ employee, status: 'Auto-Leave' });
-      totalUsed += autoLeavesCount;
+      const halfLeavesCount = await Attendance.countDocuments({ employee, status: 'Half-Day Leave' });
+      totalUsed += autoLeavesCount + (halfLeavesCount * 0.5);
     }
 
     const maxDays = balanceConfig[type] || 0;
@@ -276,11 +255,11 @@ router.post('/leaves', upload.single('attachment'), async (req, res) => {
       });
     }
 
-    // Notify Admin via Email
+    // Notify Admin and Employee via Email
     const user = await User.findById(employee);
     if (user) {
       await sendStylishEmail(
-        process.env.EMAIL_USER,
+        `${process.env.EMAIL_USER},${user.email}`,
         `New Leave Application: ${user.name}`,
         `New Leave Request 📝`,
         `${user.name} has submitted a new leave application.`,

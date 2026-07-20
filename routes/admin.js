@@ -147,6 +147,22 @@ router.put('/employees/:id', async (req, res) => {
   }
 });
 
+// PUT toggle employee lock status
+router.put('/employees/:id/toggle-lock', async (req, res) => {
+  try {
+    const employee = await User.findById(req.params.id);
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+    
+    // Toggle isActive (lock/unlock)
+    employee.isActive = !employee.isActive;
+    await employee.save();
+
+    res.json({ message: `Employee ${employee.isActive ? 'unlocked' : 'locked'} successfully`, isActive: employee.isActive });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET employee details (with tasks)
 router.get('/employees/:id/details', async (req, res) => {
   try {
@@ -350,11 +366,11 @@ router.put('/leaves/:leaveId', async (req, res) => {
       });
     }
 
-    // Notify Employee via Email
+    // Notify Employee and Admin via Email
     if (leave.employee) {
       const color = status === 'Approved' ? '#16a34a' : '#dc2626';
       await sendStylishEmail(
-        leave.employee.email,
+        `${leave.employee.email},${process.env.EMAIL_USER}`,
         `Leave Request ${status}`,
         `Leave Request ${status} 🏖️`,
         `Hello ${leave.employee.name}, your recent leave request has been updated.`,

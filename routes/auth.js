@@ -13,6 +13,10 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ email });
 
     if (user && (await user.matchPassword(password))) {
+      if (user.isActive === false) {
+        return res.status(403).json({ message: 'Account is locked. Please contact admin.' });
+      }
+
       // Create JWT token
       const token = jwt.sign(
         { id: user._id, role: user.role },
@@ -26,6 +30,7 @@ router.post('/login', async (req, res) => {
         email: user.email,
         role: user.role,
         designation: user.designation,
+        joiningDate: user.joiningDate,
         token,
       });
     } else {
