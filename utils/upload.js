@@ -21,16 +21,19 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter (optional, to accept only images/pdfs)
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|pdf/;
+  const allowedTypes = /jpeg|jpg|png|pdf|doc|docx/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  
+  // Checking mime types for word docs can be tricky as they vary, so we'll rely mainly on extension for docs, 
+  // but let's allow common ones plus images/pdfs.
+  const isDoc = /doc|docx/.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype) || isDoc;
 
   if (extname && mimetype) {
     return cb(null, true);
   } else {
-    cb(new Error('Error: Images and PDFs only!'));
+    cb(new Error('Error: Images, PDFs, and Word documents only!'));
   }
 };
 

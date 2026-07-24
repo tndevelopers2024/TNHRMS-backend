@@ -3,7 +3,9 @@ const path = require('path');
 require('dotenv').config();
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.hostinger.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -19,7 +21,7 @@ const transporter = nodemailer.createTransport({
  * @param {string} contentHtml - Optional HTML content (e.g., custom colored box for OTP or credentials)
  * @param {string} outro - Optional closing text or call to action
  */
-const sendStylishEmail = async (to, subject, title, intro, contentHtml = '', outro = '') => {
+const sendStylishEmail = async (to, subject, title, intro, contentHtml = '', outro = '', extraAttachments = []) => {
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to,
@@ -59,7 +61,8 @@ const sendStylishEmail = async (to, subject, title, intro, contentHtml = '', out
         filename: 'favicon.jpg',
         path: path.join(__dirname, '../public/images/favicon.jpg'),
         cid: 'favicon'
-      }
+      },
+      ...extraAttachments
     ]
   };
 

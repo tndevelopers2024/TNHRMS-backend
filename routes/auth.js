@@ -31,6 +31,7 @@ router.post('/login', async (req, res) => {
         role: user.role,
         designation: user.designation,
         joiningDate: user.joiningDate,
+        documentStatus: user.documentStatus,
         token,
       });
     } else {

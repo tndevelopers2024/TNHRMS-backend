@@ -9,6 +9,12 @@ const initCronJobs = () => {
     console.log('Running daily cron job for missed checkouts...');
     try {
       const now = new Date();
+      // Skip penalty on Sundays (0 = Sunday)
+      if (now.getDay() === 0) {
+        console.log('Today is Sunday (Holiday). Skipping missed checkout penalties.');
+        return;
+      }
+      
       // Format YYYY-MM-DD
       const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
 

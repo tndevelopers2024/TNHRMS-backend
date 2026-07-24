@@ -126,6 +126,9 @@ router.post('/attendance/checkin', async (req, res) => {
       });
       await attendance.save();
       
+      const io = req.app.get('io');
+      if (io) io.to('admin').emit('notification', { type: 'attendance_update' });
+      
       // Removed check-in email as per user request
     }
     res.json({ message: 'Checked in successfully', record: attendance });
@@ -165,6 +168,9 @@ router.post('/attendance/checkout', async (req, res) => {
     }
     
     await attendance.save();
+    
+    const io = req.app.get('io');
+    if (io) io.to('admin').emit('notification', { type: 'attendance_update' });
     
     // Removed check-out email as per user request
     
@@ -404,6 +410,11 @@ router.put('/profile-details/:userId', documentFields, async (req, res) => {
     user.pendingProfileUpdates = pendingUpdate;
     // We must tell mongoose that the mixed type field has changed
     user.markModified('pendingProfileUpdates');
+    
+    // Update documentStatus if it's currently pending upload or rejected
+    if (user.documentStatus === 'Pending Upload' || user.documentStatus === 'Rejected') {
+      user.documentStatus = 'Pending Approval';
+    }
     
     await user.save();
 

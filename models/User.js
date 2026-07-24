@@ -20,6 +20,11 @@ const userSchema = new mongoose.Schema({
     enum: ['admin', 'employee'],
     default: 'employee',
   },
+  employeeId: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
   department: {
     type: String,
   },
@@ -99,6 +104,15 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true,
+  },
+  documentStatus: {
+    type: String,
+    enum: ['Pending Upload', 'Pending Approval', 'Approved', 'Rejected'],
+    default: 'Pending Upload'
+  },
+  rejectionReason: {
+    type: String,
+    default: null
   },
   pendingProfileUpdates: {
     type: mongoose.Schema.Types.Mixed, // Stores pending modifications until admin approval

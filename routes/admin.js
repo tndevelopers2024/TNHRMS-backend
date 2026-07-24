@@ -9,7 +9,7 @@ const Holiday = require('../models/Holiday');
 const Department = require('../models/Department');
 const Payslip = require('../models/Payslip');
 const Notification = require('../models/Notification');
-
+const upload = require('../utils/upload');
 // GET all employees
 router.get('/employees', async (req, res) => {
   try {
@@ -17,6 +17,66 @@ router.get('/employees', async (req, res) => {
     res.json(employees);
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+// POST upload offer letter
+router.post('/employees/:id/offer-letter', (req, res, next) => {
+  upload.single('offerLetter')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ message: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    if (!user.documents) {
+      user.documents = {};
+    }
+    
+    user.documents.offerLetter = '/uploads/' + req.file.filename;
+    // Tell mongoose the object has been modified
+    user.markModified('documents');
+    await user.save();
+
+    try {
+      const contentHtml = `
+        <div style="background-color: #f8fafc; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <p style="margin: 0 0 15px 0; color: #475569; font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: 1px;">Document Update</p>
+          <p style="margin: 0; color: #1e293b; font-size: 15px;">Your offer letter has been successfully uploaded to your employee profile.</p>
+        </div>
+      `;
+      
+      const attachment = {
+        filename: req.file.originalname,
+        path: req.file.path
+      };
+      
+      await sendStylishEmail(
+        user.email,
+        'Offer Letter Uploaded - TN HRMS',
+        `Great news, ${user.name}! 🎉`,
+        `Your offer letter has been uploaded by the admin.`,
+        contentHtml,
+        `Please log in to your portal and visit your profile to view and download your offer letter.`,
+        [attachment]
+      );
+    } catch (emailErr) {
+      console.error('Error sending offer letter email:', emailErr);
+    }
+    
+    res.json({ message: 'Offer letter uploaded successfully and email sent', documents: user.documents });
+  } catch (err) {
+    require('fs').writeFileSync('offer_letter_error.log', err.stack);
+    console.error('Offer letter upload error:', err);
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 });
 
@@ -32,11 +92,23 @@ router.post('/employees', async (req, res) => {
     // Generate random 8 character password
     const generatedPassword = crypto.randomBytes(4).toString('hex');
 
+    // Generate unique employee ID (TN-EMP-001)
+    const lastEmployee = await User.findOne({ role: 'employee', employeeId: { $regex: /^TN-EMP-\d{3,}$/ } }).sort({ employeeId: -1 });
+    let newEmployeeId = 'TN-EMP-001';
+    if (lastEmployee && lastEmployee.employeeId) {
+      const match = lastEmployee.employeeId.match(/^TN-EMP-(\d+)$/);
+      if (match) {
+        const nextNum = parseInt(match[1], 10) + 1;
+        newEmployeeId = `TN-EMP-${nextNum.toString().padStart(3, '0')}`;
+      }
+    }
+
     const newEmployee = new User({
       name,
       email,
       password: generatedPassword, // Password will be hashed in pre-save hook
       role: 'employee',
+      employeeId: newEmployeeId,
       department: department || 'General',
       designation: designation || 'Employee',
       phone,
@@ -94,6 +166,9 @@ router.delete('/employees/:id', async (req, res) => {
     // Also delete tasks and leaves associated with the employee
     await Task.deleteMany({ employee: req.params.id });
     await Leave.deleteMany({ employee: req.params.id });
+    
+    const io = req.app.get('io');
+    if (io) io.to('admin').emit('notification', { type: 'employee_deleted' });
     
     res.json({ message: 'Employee removed successfully' });
   } catch (err) {
@@ -156,6 +231,14 @@ router.put('/employees/:id/toggle-lock', async (req, res) => {
     // Toggle isActive (lock/unlock)
     employee.isActive = !employee.isActive;
     await employee.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      if (!employee.isActive) {
+        io.to(employee._id.toString()).emit('account_locked', { message: 'Your account has been locked by the admin.' });
+      }
+      io.to('admin').emit('notification', { type: 'profile_update', message: `Employee ${employee.name} has been ${employee.isActive ? 'unlocked' : 'locked'}.` });
+    }
 
     res.json({ message: `Employee ${employee.isActive ? 'unlocked' : 'locked'} successfully`, isActive: employee.isActive });
   } catch (err) {
@@ -405,6 +488,10 @@ router.post('/holidays', async (req, res) => {
   try {
     const newHoliday = new Holiday({ name, date, type });
     await newHoliday.save();
+    
+    const io = req.app.get('io');
+    if (io) io.to('admin').emit('notification', { type: 'holiday_updated' });
+    
     res.status(201).json({ message: 'Holiday created successfully', holiday: newHoliday });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -421,6 +508,10 @@ router.put('/holidays/:id', async (req, res) => {
       { new: true }
     );
     if (!holiday) return res.status(404).json({ message: 'Holiday not found' });
+    
+    const io = req.app.get('io');
+    if (io) io.to('admin').emit('notification', { type: 'holiday_updated' });
+    
     res.json({ message: 'Holiday updated successfully', holiday });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -432,6 +523,10 @@ router.delete('/holidays/:id', async (req, res) => {
   try {
     const holiday = await Holiday.findByIdAndDelete(req.params.id);
     if (!holiday) return res.status(404).json({ message: 'Holiday not found' });
+    
+    const io = req.app.get('io');
+    if (io) io.to('admin').emit('notification', { type: 'holiday_updated' });
+    
     res.json({ message: 'Holiday removed successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -458,6 +553,10 @@ router.post('/departments', async (req, res) => {
     }
     const newDepartment = new Department({ name });
     await newDepartment.save();
+    
+    const io = req.app.get('io');
+    if (io) io.to('admin').emit('notification', { type: 'department_updated' });
+    
     res.status(201).json({ message: 'Department created successfully', department: newDepartment });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -477,6 +576,10 @@ router.delete('/departments/:id', async (req, res) => {
     );
 
     await Department.findByIdAndDelete(req.params.id);
+    
+    const io = req.app.get('io');
+    if (io) io.to('admin').emit('notification', { type: 'department_updated' });
+    
     res.json({ message: 'Department removed successfully and employees reassigned' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -626,6 +729,16 @@ router.post('/payroll/status', async (req, res) => {
       await payslip.save();
     }
     
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin').emit('notification', { type: 'payroll_generated' });
+      io.to(employeeId.toString()).emit('notification', { 
+        type: 'payroll_generated',
+        title: 'Payroll Generated',
+        message: `Your payslip for ${month} has been updated to ${status}.`
+      });
+    }
+    
     res.json({ message: 'Payroll status and values frozen successfully', payslip });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -668,6 +781,7 @@ router.post('/employees/:id/approve-profile', async (req, res) => {
     }
 
     user.pendingProfileUpdates = null;
+    user.documentStatus = 'Approved';
     user.markModified('pendingProfileUpdates');
     await user.save();
     
@@ -691,17 +805,21 @@ router.post('/employees/:id/approve-profile', async (req, res) => {
 // POST /employees/:id/reject-profile
 router.post('/employees/:id/reject-profile', async (req, res) => {
   try {
+    const { reason } = req.body || {};
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
     
     user.pendingProfileUpdates = null;
+    user.documentStatus = 'Rejected';
+    user.rejectionReason = reason || 'No specific reason provided by administrator.';
     user.markModified('pendingProfileUpdates');
     await user.save();
     
+    // Notify employee
     const notif = await Notification.create({
       recipient: user._id,
       title: 'Profile Updates Rejected',
-      message: 'Your recent profile updates were rejected by the admin.',
+      message: 'Your recent profile updates were rejected by the admin. Reason: ' + (reason || 'No specific reason provided.'),
       type: 'profile_update',
       relatedUser: user._id
     });
