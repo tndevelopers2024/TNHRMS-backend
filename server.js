@@ -4,6 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
+const multer = require('multer');
 
 dotenv.config();
 
@@ -58,6 +59,17 @@ initCronJobs();
 // Test Route
 app.get('/', (req, res) => {
   res.send('HRMS Backend is running');
+});
+
+// Error handling middleware (catches Multer errors)
+app.use((err, req, res, next) => {
+  console.error('Server Error:', err.message);
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ message: 'Upload error: ' + err.message });
+  } else if (err) {
+    return res.status(400).json({ message: err.message });
+  }
+  next();
 });
 
 // Start Server immediately for Hostinger (must call listen within 3 seconds)
