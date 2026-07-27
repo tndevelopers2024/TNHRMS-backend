@@ -101,6 +101,7 @@ const userSchema = new mongoose.Schema({
     experienceCertificate: String,
     salarySlip: String,
     offerLetter: String,
+    previousOfferLetter: String,
   },
   professionalReferences: [{
     name: String,
