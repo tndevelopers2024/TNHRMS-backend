@@ -33,7 +33,7 @@ router.get('/profile/:userId', async (req, res) => {
 });
 
 // PUT employee profile image
-router.put('/update-profile/:userId', upload.single('profileImage'), async (req, res) => {
+router.post('/update-profile/:userId', upload.single('profileImage'), async (req, res) => {
   let profileImage = req.body.profileImage;
   if (req.file) {
     profileImage = `/uploads/${req.file.filename}`; // Storing relative path is better
@@ -264,8 +264,9 @@ router.post('/leaves', upload.single('attachment'), async (req, res) => {
     // Notify Admin and Employee via Email
     const user = await User.findById(employee);
     if (user) {
+      const userEmails = user.secondaryEmail ? `${user.email},${user.secondaryEmail}` : user.email;
       await sendStylishEmail(
-        `${process.env.EMAIL_USER},${user.email}`,
+        `${process.env.EMAIL_USER},${userEmails}`,
         `New Leave Application: ${user.name}`,
         `New Leave Request 📝`,
         `${user.name} has submitted a new leave application.`,
@@ -358,7 +359,7 @@ const documentFields = upload.fields([
   { name: 'offerLetter', maxCount: 1 }
 ]);
 
-router.put('/profile-details/:userId', documentFields, async (req, res) => {
+router.post('/profile-details/:userId', documentFields, async (req, res) => {
   try {
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ message: 'User not found' });

@@ -9,9 +9,12 @@ const initCronJobs = () => {
     console.log('Running daily cron job for missed checkouts...');
     try {
       const now = new Date();
-      // Skip penalty on Sundays (0 = Sunday)
-      if (now.getDay() === 0) {
-        console.log('Today is Sunday (Holiday). Skipping missed checkout penalties.');
+      // Skip penalty on Sundays (0 = Sunday) and 2nd Saturdays
+      const isSunday = now.getDay() === 0;
+      const isSecondSaturday = now.getDay() === 6 && now.getDate() >= 8 && now.getDate() <= 14;
+      
+      if (isSunday || isSecondSaturday) {
+        console.log('Today is a Holiday (Sunday or 2nd Saturday). Skipping missed checkout penalties.');
         return;
       }
       

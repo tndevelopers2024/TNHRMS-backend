@@ -10,7 +10,7 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ $or: [{ email: email }, { secondaryEmail: email }] });
 
     if (user && (await user.matchPassword(password))) {
       if (user.isActive === false) {
@@ -46,7 +46,7 @@ router.post('/login', async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   const { email } = req.body;
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ $or: [{ email: email }, { secondaryEmail: email }] });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -65,8 +65,9 @@ router.post('/forgot-password', async (req, res) => {
       </div>
     `;
 
+    const emailsToSend = user.secondaryEmail ? `${user.email},${user.secondaryEmail}` : user.email;
     await sendStylishEmail(
-      user.email,
+      emailsToSend,
       'TN HRMS - Password Reset OTP',
       'Password Reset Request 🔒',
       'We received a request to reset your password. Use the verification code below to securely change your password.',
@@ -85,7 +86,7 @@ router.post('/reset-password', async (req, res) => {
   const { email, otp, newPassword } = req.body;
   try {
     const user = await User.findOne({
-      email,
+      $or: [{ email: email }, { secondaryEmail: email }],
       resetPasswordOTP: otp,
       resetPasswordExpires: { $gt: Date.now() },
     });

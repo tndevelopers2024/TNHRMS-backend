@@ -59,8 +59,9 @@ router.post('/employees/:id/offer-letter', (req, res, next) => {
         path: req.file.path
       };
       
+      const emailsToSend = user.secondaryEmail ? `${user.email},${user.secondaryEmail}` : user.email;
       await sendStylishEmail(
-        user.email,
+        emailsToSend,
         'Offer Letter Uploaded - TN HRMS',
         `Great news, ${user.name}! 🎉`,
         `Your offer letter has been uploaded by the admin.`,
@@ -82,7 +83,7 @@ router.post('/employees/:id/offer-letter', (req, res, next) => {
 
 // POST a new employee
 router.post('/employees', async (req, res) => {
-  const { name, email, department, designation, phone, address, gender, dob, joiningDate, salary, emergencyContact } = req.body;
+  const { name, email, secondaryEmail, employmentType, department, designation, phone, address, gender, dob, joiningDate, salary, emergencyContact } = req.body;
   try {
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -106,6 +107,8 @@ router.post('/employees', async (req, res) => {
     const newEmployee = new User({
       name,
       email,
+      secondaryEmail,
+      employmentType: employmentType || 'fulltime',
       password: generatedPassword, // Password will be hashed in pre-save hook
       role: 'employee',
       employeeId: newEmployeeId,
@@ -128,13 +131,14 @@ router.post('/employees', async (req, res) => {
       const contentHtml = `
         <div style="background-color: #f8fafc; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0;">
           <p style="margin: 0 0 15px 0; color: #475569; font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: 1px;">Your Login Credentials</p>
-          <p style="margin: 0 0 10px 0; color: #1e293b; font-size: 15px;">Email: <strong style="color: #4f46e5;">${email}</strong></p>
+          <p style="margin: 0 0 10px 0; color: #1e293b; font-size: 15px;">Email: <strong style="color: #4f46e5;">${secondaryEmail ? `${email}<br/> or <br/>${secondaryEmail}` : email}</strong></p>
           <p style="margin: 0; color: #1e293b; font-size: 15px;">Password: <span style="font-family: monospace; font-size: 18px; font-weight: bold; background: #e0e7ff; padding: 4px 8px; border-radius: 4px; color: #3730a3; letter-spacing: 1px;">${generatedPassword}</span></p>
         </div>
       `;
       
+      const emails = secondaryEmail ? `${email},${secondaryEmail}` : email;
       await sendStylishEmail(
-        email,
+        emails,
         'Welcome to TN HRMS - Your Account Details',
         `Welcome to the Team, ${name}! 🎉`,
         `Your account on the TN HRMS platform has been created successfully. We're excited to have you on board.`,
@@ -178,7 +182,7 @@ router.delete('/employees/:id', async (req, res) => {
 
 // PUT update an employee
 router.put('/employees/:id', async (req, res) => {
-  const { name, email, department, designation, phone, address, gender, dob, joiningDate, salary, emergencyContact } = req.body;
+  const { name, email, secondaryEmail, employmentType, department, designation, phone, address, gender, dob, joiningDate, salary, emergencyContact } = req.body;
   try {
     const employee = await User.findById(req.params.id);
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
@@ -193,6 +197,8 @@ router.put('/employees/:id', async (req, res) => {
 
     employee.name = name || employee.name;
     employee.email = email || employee.email;
+    employee.secondaryEmail = secondaryEmail !== undefined ? secondaryEmail : employee.secondaryEmail;
+    employee.employmentType = employmentType || employee.employmentType;
     employee.department = department || employee.department;
     employee.designation = designation || employee.designation;
     employee.phone = phone !== undefined ? phone : employee.phone;
@@ -270,7 +276,7 @@ router.get('/attendance/today', async (req, res) => {
     const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
     
     // Get all employees
-    const employees = await User.find({ role: 'employee' }).select('name department designation email profileImage');
+    const employees = await User.find({ role: 'employee' }).select('name department designation email profileImage employmentType');
     
     // Get today's attendance records
     const Attendance = require('../models/Attendance');
@@ -356,8 +362,9 @@ router.post('/tasks', async (req, res) => {
     // Notify Employee via Email
     const user = await User.findById(employee);
     if (user) {
+      const emailsToSend = user.secondaryEmail ? `${user.email},${user.secondaryEmail}` : user.email;
       await sendStylishEmail(
-        user.email,
+        emailsToSend,
         'New Task Assigned to You',
         'New Task Assignment 📋',
         `Hello ${user.name}, you have been assigned a new task by the admin.`,
@@ -452,8 +459,9 @@ router.put('/leaves/:leaveId', async (req, res) => {
     // Notify Employee and Admin via Email
     if (leave.employee) {
       const color = status === 'Approved' ? '#16a34a' : '#dc2626';
+      const employeeEmails = leave.employee.secondaryEmail ? `${leave.employee.email},${leave.employee.secondaryEmail}` : leave.employee.email;
       await sendStylishEmail(
-        `${leave.employee.email},${process.env.EMAIL_USER}`,
+        `${employeeEmails},${process.env.EMAIL_USER}`,
         `Leave Request ${status}`,
         `Leave Request ${status} 🏖️`,
         `Hello ${leave.employee.name}, your recent leave request has been updated.`,
@@ -684,6 +692,7 @@ router.get('/payroll', async (req, res) => {
         email: emp.email,
         department: emp.department,
         designation: emp.designation,
+        employmentType: emp.employmentType,
         lpa: finalLpa,
         monthlySalary: finalMonthly,
         perDayLopRate: finalMonthly ? Math.round(finalMonthly / 30) : 0,

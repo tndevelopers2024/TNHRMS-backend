@@ -20,6 +20,14 @@ const userSchema = new mongoose.Schema({
     enum: ['admin', 'employee'],
     default: 'employee',
   },
+  employmentType: {
+    type: String,
+    enum: ['fulltime', 'freelancer', 'intern', 'contractor'],
+    default: 'fulltime',
+  },
+  secondaryEmail: {
+    type: String,
+  },
   employeeId: {
     type: String,
     unique: true,
