@@ -356,7 +356,7 @@ const documentFields = upload.fields([
   { name: 'relievingLetter', maxCount: 1 },
   { name: 'experienceCertificate', maxCount: 1 },
   { name: 'salarySlip', maxCount: 1 },
-  { name: 'offerLetter', maxCount: 1 }
+  { name: 'previousOfferLetter', maxCount: 1 }
 ]);
 
 router.post('/profile-details/:userId', documentFields, async (req, res) => {
