@@ -8,8 +8,9 @@ const userSchema = new mongoose.Schema({
   },
   email: {
     type: String,
-    required: true,
+    required: function() { return !this.secondaryEmail; },
     unique: true,
+    sparse: true,
   },
   password: {
     type: String,
@@ -136,6 +137,14 @@ const userSchema = new mongoose.Schema({
   earnedLeaves: {
     type: Number,
     default: 0,
+  },
+  casualLeaves: {
+    type: Number,
+    default: 3,
+  },
+  sickLeaves: {
+    type: Number,
+    default: 6,
   },
 }, { timestamps: true });
 

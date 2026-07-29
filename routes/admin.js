@@ -9,12 +9,65 @@ const Holiday = require('../models/Holiday');
 const Department = require('../models/Department');
 const Payslip = require('../models/Payslip');
 const Notification = require('../models/Notification');
+const Attendance = require('../models/Attendance');
 const upload = require('../utils/upload');
 // GET all employees
 router.get('/employees', async (req, res) => {
   try {
     const employees = await User.find({ role: 'employee' }).select('-password');
     res.json(employees);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET employee leave balances with used leaves calculation
+router.get('/employee-leave-balances', async (req, res) => {
+  try {
+    const employees = await User.find({ role: 'employee' }).select('-password').lean();
+    const leaves = await Leave.find({ status: { $in: ['Approved', 'Pending'] } }).lean();
+    const attendances = await Attendance.find({ status: { $in: ['Auto-Leave', 'Half-Day Leave'] } }).lean();
+
+    const employeesWithBalances = employees.map(emp => {
+      const empLeaves = leaves.filter(l => l.employee.toString() === emp._id.toString());
+      const empAttendances = attendances.filter(a => a.employee.toString() === emp._id.toString());
+      
+      const calcUsed = (type) => {
+        let used = empLeaves
+          .filter(l => l.type === type)
+          .reduce((acc, curr) => acc + curr.days, 0);
+          
+        if (type === 'Casual Leave') {
+          const autoLeaves = empAttendances.filter(a => a.status === 'Auto-Leave').length;
+          const halfLeaves = empAttendances.filter(a => a.status === 'Half-Day Leave').length;
+          used += autoLeaves + (halfLeaves * 0.5);
+        }
+        return used;
+      };
+
+      const totalCasual = emp.casualLeaves !== undefined ? emp.casualLeaves : 3;
+      const totalSick = emp.sickLeaves !== undefined ? emp.sickLeaves : 6;
+      const totalEarned = emp.earnedLeaves || 0;
+
+      const usedCasual = calcUsed('Casual Leave');
+      const usedSick = calcUsed('Sick Leave');
+      const usedEarned = calcUsed('Earned Leave');
+
+      return {
+        ...emp,
+        casualLeavesAvailable: Math.max(0, totalCasual - usedCasual),
+        sickLeavesAvailable: Math.max(0, totalSick - usedSick),
+        earnedLeavesAvailable: Math.max(0, totalEarned - usedEarned),
+        casualLeavesTotal: totalCasual,
+        sickLeavesTotal: totalSick,
+        earnedLeavesTotal: totalEarned,
+        casualLeavesUsed: usedCasual,
+        sickLeavesUsed: usedSick,
+        earnedLeavesUsed: usedEarned,
+      };
+    });
+
+    res.json(employeesWithBalances);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -85,9 +138,13 @@ router.post('/employees/:id/offer-letter', (req, res, next) => {
 router.post('/employees', async (req, res) => {
   const { name, email, secondaryEmail, employmentType, department, designation, phone, address, gender, dob, joiningDate, salary, emergencyContact } = req.body;
   try {
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+    const finalEmail = email || undefined;
+    
+    if (finalEmail) {
+      const userExists = await User.findOne({ email: finalEmail });
+      if (userExists) {
+        return res.status(400).json({ message: 'User already exists' });
+      }
     }
 
     // Generate random 8 character password
@@ -106,7 +163,7 @@ router.post('/employees', async (req, res) => {
 
     const newEmployee = new User({
       name,
-      email,
+      email: finalEmail,
       secondaryEmail,
       employmentType: employmentType || 'fulltime',
       password: generatedPassword, // Password will be hashed in pre-save hook
@@ -128,15 +185,16 @@ router.post('/employees', async (req, res) => {
 
     // Send email with password
     try {
+      const emailDisplay = finalEmail && secondaryEmail ? `${finalEmail}<br/> or <br/>${secondaryEmail}` : finalEmail || secondaryEmail;
       const contentHtml = `
         <div style="background-color: #f8fafc; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0;">
           <p style="margin: 0 0 15px 0; color: #475569; font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: 1px;">Your Login Credentials</p>
-          <p style="margin: 0 0 10px 0; color: #1e293b; font-size: 15px;">Email: <strong style="color: #4f46e5;">${secondaryEmail ? `${email}<br/> or <br/>${secondaryEmail}` : email}</strong></p>
+          <p style="margin: 0 0 10px 0; color: #1e293b; font-size: 15px;">Email: <strong style="color: #4f46e5;">${emailDisplay}</strong></p>
           <p style="margin: 0; color: #1e293b; font-size: 15px;">Password: <span style="font-family: monospace; font-size: 18px; font-weight: bold; background: #e0e7ff; padding: 4px 8px; border-radius: 4px; color: #3730a3; letter-spacing: 1px;">${generatedPassword}</span></p>
         </div>
       `;
       
-      const emails = secondaryEmail ? `${email},${secondaryEmail}` : email;
+      const emails = [finalEmail, secondaryEmail].filter(Boolean).join(',');
       await sendStylishEmail(
         emails,
         'Welcome to TN HRMS - Your Account Details',
@@ -187,16 +245,18 @@ router.put('/employees/:id', async (req, res) => {
     const employee = await User.findById(req.params.id);
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
+    const finalEmail = email === "" ? undefined : (email || employee.email);
+
     // Check if the new email is already used by another user
-    if (email !== employee.email) {
-      const emailExists = await User.findOne({ email });
+    if (finalEmail && finalEmail !== employee.email) {
+      const emailExists = await User.findOne({ email: finalEmail });
       if (emailExists) {
         return res.status(400).json({ message: 'Email is already in use by another user' });
       }
     }
 
     employee.name = name || employee.name;
-    employee.email = email || employee.email;
+    employee.email = finalEmail;
     employee.secondaryEmail = secondaryEmail !== undefined ? secondaryEmail : employee.secondaryEmail;
     employee.employmentType = employmentType || employee.employmentType;
     employee.department = department || employee.department;
@@ -223,6 +283,53 @@ router.put('/employees/:id', async (req, res) => {
       department: employee.department,
       designation: employee.designation
     }});
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT update employee leave balance
+router.put('/employees/:id/leave-balance', async (req, res) => {
+  const { earnedLeaves, casualLeaves, sickLeaves } = req.body;
+  try {
+    const employee = await User.findById(req.params.id);
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+    
+    let updated = false;
+    if (earnedLeaves !== undefined) {
+      employee.earnedLeaves = earnedLeaves;
+      updated = true;
+    }
+    if (casualLeaves !== undefined) {
+      employee.casualLeaves = casualLeaves;
+      updated = true;
+    }
+    if (sickLeaves !== undefined) {
+      employee.sickLeaves = sickLeaves;
+      updated = true;
+    }
+    
+    if (updated) {
+      await employee.save();
+      
+      const io = req.app.get('io');
+      if (io) {
+        io.to('admin').emit('notification', { type: 'leave_balance_updated' });
+        io.to(employee._id.toString()).emit('notification', {
+          type: 'leave_balance_updated',
+          message: 'Your leave balance has been updated by the admin.',
+        });
+      }
+      
+      return res.json({ 
+        message: 'Leave balance updated successfully', 
+        earnedLeaves: employee.earnedLeaves,
+        casualLeaves: employee.casualLeaves,
+        sickLeaves: employee.sickLeaves
+      });
+    } else {
+      return res.status(400).json({ message: 'No leave balances provided for update' });
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
