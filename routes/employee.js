@@ -237,20 +237,51 @@ router.post('/leaves', upload.single('attachment'), async (req, res) => {
     }
 
     const maxDays = balanceConfig[type] || 0;
-    if (days > (maxDays - totalUsed)) {
-      return res.status(400).json({ message: `You only have ${maxDays - totalUsed} day(s) of ${type} remaining.` });
+    const remainingDays = Math.max(0, maxDays - totalUsed);
+
+    let leavesToCreate = [];
+
+    if (type === 'Loss of Pay') {
+      leavesToCreate.push({
+        employee, type, startDate, endDate, days, reason, attachment
+      });
+    } else if (days <= remainingDays) {
+      leavesToCreate.push({
+        employee, type, startDate, endDate, days, reason, attachment
+      });
+    } else {
+      if (remainingDays > 0) {
+        leavesToCreate.push({
+          employee, type, startDate, endDate, days: remainingDays, reason, attachment
+        });
+      }
+
+      let excess = days - remainingDays;
+
+      if (type !== 'Earned Leave') {
+        const earnedLeavesCount = userObj ? (userObj.earnedLeaves || 0) : 0;
+        const earnedUsedLeaves = leaves
+          .filter(l => l.type === 'Earned Leave' && (l.status === 'Approved' || l.status === 'Pending'))
+          .reduce((acc, curr) => acc + (curr.days || 0), 0);
+        const earnedRemaining = Math.max(0, earnedLeavesCount - earnedUsedLeaves);
+
+        if (earnedRemaining > 0) {
+          const toEarned = Math.min(excess, earnedRemaining);
+          leavesToCreate.push({
+            employee, type: 'Earned Leave', startDate, endDate, days: toEarned, reason: reason + ` (Auto-converted from ${type})`, attachment
+          });
+          excess -= toEarned;
+        }
+      }
+
+      if (excess > 0) {
+        leavesToCreate.push({
+          employee, type: 'Loss of Pay', startDate, endDate, days: excess, reason: reason + ` (Auto-converted from ${type})`, attachment
+        });
+      }
     }
 
-    const newLeave = new Leave({
-      employee,
-      type,
-      startDate,
-      endDate,
-      days,
-      reason,
-      attachment
-    });
-    const savedLeave = await newLeave.save();
+    const savedLeaves = await Leave.insertMany(leavesToCreate);
 
     // Emit notification to admin
     const io = req.app.get('io');
@@ -265,13 +296,15 @@ router.post('/leaves', upload.single('attachment'), async (req, res) => {
     const user = await User.findById(employee);
     if (user) {
       const userEmails = user.secondaryEmail ? `${user.email},${user.secondaryEmail}` : user.email;
+      const typeDisplay = leavesToCreate.map(l => `${l.days} day(s) ${l.type}`).join(', ');
+
       await sendStylishEmail(
         `${process.env.EMAIL_USER},${userEmails}`,
         `New Leave Application: ${user.name}`,
         `New Leave Request 📝`,
         `${user.name} has submitted a new leave application.`,
         `<div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; text-align: left; display: inline-block;">
-           <p style="margin: 5px 0;"><strong>Type:</strong> ${type}</p>
+           <p style="margin: 5px 0;"><strong>Type:</strong> ${typeDisplay}</p>
            <p style="margin: 5px 0;"><strong>Duration:</strong> ${days} day(s)</p>
            <p style="margin: 5px 0;"><strong>From:</strong> ${new Date(startDate).toLocaleDateString()} <strong>To:</strong> ${new Date(endDate).toLocaleDateString()}</p>
            <p style="margin: 5px 0;"><strong>Reason:</strong> ${reason}</p>
@@ -280,7 +313,7 @@ router.post('/leaves', upload.single('attachment'), async (req, res) => {
       );
     }
 
-    res.status(201).json(savedLeave);
+    res.status(201).json(leavesToCreate.length > 1 ? savedLeaves : savedLeaves[0]);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
