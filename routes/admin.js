@@ -407,11 +407,11 @@ router.put('/attendance/:id/mark-present', async (req, res) => {
     const record = await Attendance.findById(req.params.id);
     if (!record) return res.status(404).json({ message: 'Attendance record not found' });
 
-    // If it was Auto-Leave, we need to refund the deducted salary
+    // If it was Auto-Leave, refund the salary deduction
+    // (Leave balance adjusts automatically since calcUsed counts Auto-Leave records)
     if (record.status === 'Auto-Leave') {
       const user = await User.findById(record.employee);
       if (user && user.salary) {
-        // Add back 1/30th of the salary that was deducted
         const deduction = Math.round(user.salary / 29);
         user.salary = user.salary + deduction;
         await user.save();
@@ -427,9 +427,84 @@ router.put('/attendance/:id/mark-present', async (req, res) => {
       record.totalHours = 8;
     }
     record.summary = 'Admin marked as Present (Technical Issue)';
-    
+
     await record.save();
     res.json({ message: 'Attendance marked as present successfully', record });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST mark a missing day (no check-in) as Auto-Leave
+router.post('/attendance/mark-absent', async (req, res) => {
+  try {
+    const { employeeId, date } = req.body;
+
+    if (!employeeId || !date) {
+      return res.status(400).json({ message: 'employeeId and date are required.' });
+    }
+
+    // Check if a record already exists for this date
+    let record = await Attendance.findOne({ employee: employeeId, date });
+    if (record) {
+      if (record.status !== 'Auto-Leave') {
+        record.status = 'Auto-Leave';
+        record.summary = 'Admin marked as Leave (No check-in)';
+        await record.save();
+      }
+      return res.json({ message: 'Attendance record updated to Leave.', record });
+    }
+
+    // Create a new Auto-Leave record — calcUsed in Leaves.jsx will count this automatically
+    record = new Attendance({
+      employee: employeeId,
+      date,
+      checkInTime: new Date(`${date}T09:00:00`),
+      status: 'Auto-Leave',
+      summary: 'Admin marked as Leave (No check-in)',
+    });
+    await record.save();
+
+    res.status(201).json({ message: 'Day marked as Leave successfully.', record });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST create attendance for a missing day and immediately mark as Present
+router.post('/attendance/create-and-mark-present', async (req, res) => {
+  try {
+    const { employeeId, date } = req.body; // date: YYYY-MM-DD
+
+    if (!employeeId || !date) {
+      return res.status(400).json({ message: 'employeeId and date are required.' });
+    }
+
+    // Check if a record already exists
+    let record = await Attendance.findOne({ employee: employeeId, date });
+    const wasAutoLeave = record && record.status === 'Auto-Leave';
+
+    if (!record) {
+      record = new Attendance({
+        employee: employeeId,
+        date,
+        checkInTime: new Date(`${date}T09:00:00`),
+        status: 'Present',
+      });
+    }
+
+    // Simulate 8-hour shift
+    record.checkInTime = new Date(`${date}T09:00:00`);
+    record.checkOutTime = new Date(`${date}T17:00:00`);
+    record.totalHours = 8;
+    record.status = 'Present';
+    record.summary = 'Admin marked as Present (No check-in recorded)';
+    await record.save();
+    // No casualLeaves adjustment needed — calcUsed recalculates automatically
+
+    res.json({ message: 'Day marked as Present successfully.', record });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });

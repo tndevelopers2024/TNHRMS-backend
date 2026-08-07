@@ -108,6 +108,45 @@ router.get('/attendance/:userId', async (req, res) => {
   }
 });
 
+// GET computed leave balance — always fresh, calculated server-side
+router.get('/leave-balance/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const user = await User.findById(userId).select('casualLeaves sickLeaves earnedLeaves');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Count Auto-Leave and Half-Day attendance records
+    const autoLeaveCount = await Attendance.countDocuments({ employee: userId, status: 'Auto-Leave' });
+    const halfDayCount = await Attendance.countDocuments({ employee: userId, status: 'Half-Day Leave' });
+
+    // Count leave days from approved/pending Leave documents by type
+    const leaves = await Leave.find({
+      employee: userId,
+      status: { $in: ['Approved', 'Pending'] }
+    });
+
+    const leaveByType = {};
+    for (const l of leaves) {
+      if (!leaveByType[l.type]) leaveByType[l.type] = 0;
+      leaveByType[l.type] += l.days || 0;
+    }
+
+    // Casual Leave used = approved/pending casual leaves + auto-leaves + half-day leaves
+    const casualUsed = (leaveByType['Casual Leave'] || 0) + autoLeaveCount + (halfDayCount * 0.5);
+    const sickUsed = leaveByType['Sick Leave'] || 0;
+    const earnedUsed = leaveByType['Earned Leave'] || 0;
+
+    res.json({
+      casual: { total: user.casualLeaves || 3, used: casualUsed, remaining: Math.max(0, (user.casualLeaves || 3) - casualUsed) },
+      sick:   { total: user.sickLeaves || 6,   used: sickUsed,   remaining: Math.max(0, (user.sickLeaves || 6) - sickUsed) },
+      earned: { total: user.earnedLeaves || 0,  used: earnedUsed, remaining: Math.max(0, (user.earnedLeaves || 0) - earnedUsed) },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
 // POST checkin
 router.post('/attendance/checkin', async (req, res) => {
   const { userId } = req.body;

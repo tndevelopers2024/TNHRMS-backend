@@ -59,6 +59,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 
 // Initialize Cron Jobs
 const initCronJobs = require('./cronJobs');
+const { runStartupAttendanceCheck } = require('./cronJobs');
 initCronJobs();
 
 // Test Route
@@ -91,6 +92,8 @@ mongoose
   .connect(uri)
   .then(() => {
     console.log('Connected to MongoDB');
+    // Run startup check: process yesterday's attendance if cron missed it (server was down at midnight)
+    runStartupAttendanceCheck();
   })
   .catch((err) => {
     console.error('Error connecting to MongoDB:', err.message);
