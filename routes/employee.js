@@ -399,6 +399,16 @@ router.get('/payslips/:userId', async (req, res) => {
   }
 });
 
+// GET all holidays
+router.get('/holidays', async (req, res) => {
+  try {
+    const holidays = await Holiday.find().sort({ date: 1 });
+    res.json(holidays);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET upcoming holiday
 router.get('/holidays/upcoming', async (req, res) => {
   try {

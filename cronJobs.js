@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const Attendance = require('./models/Attendance');
 const User = require('./models/User');
 const Leave = require('./models/Leave');
+const Holiday = require('./models/Holiday');
 
 // Track dates already processed to avoid double-deductions
 const processedDates = new Set();
@@ -30,7 +31,19 @@ const processAttendanceForDate = async (dateStr) => {
 
   const targetDate = new Date(dateStr);
   if (!isWorkingDay(targetDate)) {
-    console.log(`[Attendance Cron] ${dateStr} is a holiday. Skipping.`);
+    console.log(`[Attendance Cron] ${dateStr} is a weekend. Skipping.`);
+    return;
+  }
+
+  // Check if date is a holiday in the database
+  const allHolidays = await Holiday.find({});
+  const isHoliday = allHolidays.find(h => {
+    const hDate = new Date(h.date);
+    return toDateStr(hDate) === dateStr || hDate.toISOString().startsWith(dateStr);
+  });
+
+  if (isHoliday) {
+    console.log(`[Attendance Cron] ${dateStr} is a holiday (${isHoliday.name}). Skipping.`);
     return;
   }
 
@@ -106,7 +119,19 @@ const runStartupAttendanceCheck = async () => {
     const dateStr = toDateStr(yesterday);
 
     if (!isWorkingDay(yesterday)) {
-      console.log(`[Startup Check] ${dateStr} is a holiday. No action needed.`);
+      console.log(`[Startup Check] ${dateStr} is a weekend. No action needed.`);
+      return;
+    }
+
+    // Check if it's a holiday in the database
+    const allHolidays = await Holiday.find({});
+    const isHoliday = allHolidays.find(h => {
+      const hDate = new Date(h.date);
+      return toDateStr(hDate) === dateStr || hDate.toISOString().startsWith(dateStr);
+    });
+
+    if (isHoliday) {
+      console.log(`[Startup Check] ${dateStr} is a holiday (${isHoliday.name}). No action needed.`);
       return;
     }
 
