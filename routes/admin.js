@@ -460,7 +460,6 @@ router.post('/attendance/mark-absent', async (req, res) => {
     record = new Attendance({
       employee: employeeId,
       date,
-      checkInTime: new Date(`${date}T09:00:00`),
       status: 'Auto-Leave',
       summary: 'Admin marked as Leave (No check-in)',
     });

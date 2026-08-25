@@ -79,14 +79,22 @@ const processAttendanceForDate = async (dateStr) => {
   const existingRecords = await Attendance.find({ date: dateStr });
   const presentIds = new Set(existingRecords.map(r => r.employee.toString()));
 
+  const targetDateStart = new Date(`${dateStr}T00:00:00.000Z`);
+  const targetDateEnd = new Date(`${dateStr}T23:59:59.999Z`);
+  const approvedLeaves = await Leave.find({
+    status: 'Approved',
+    startDate: { $lte: targetDateEnd },
+    endDate: { $gte: targetDateStart }
+  });
+  const onLeaveIds = new Set(approvedLeaves.map(l => l.employee.toString()));
+
   let noCheckinCount = 0;
   for (const emp of allEmployees) {
-    if (!presentIds.has(emp._id.toString())) {
+    if (!presentIds.has(emp._id.toString()) && !onLeaveIds.has(emp._id.toString())) {
       try {
         await Attendance.create({
           employee: emp._id,
           date: dateStr,
-          checkInTime: new Date(`${dateStr}T00:00:00`), // placeholder (schema requires checkInTime)
           status: 'Auto-Leave',
           summary: 'Auto-marked as Leave (No check-in)',
         });
