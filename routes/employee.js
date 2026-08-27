@@ -243,30 +243,18 @@ router.post('/leaves', upload.single('attachment'), async (req, res) => {
       return res.status(400).json({ message: `${type} must be applied in advance. Only Sick Leave can be applied for past dates.` });
     }
 
-    const leaves = await Leave.find({ employee });
-    const usedLeaves = leaves
-      .filter(l => l.type === type && (l.status === 'Approved' || l.status === 'Pending'))
-      .reduce((acc, curr) => acc + (curr.days || 0), 0);
-
+    const allLeaves = await Leave.find({ employee, status: { $in: ['Approved', 'Pending'] } }).lean();
+    const allAttendances = await Attendance.find({ employee, status: { $in: ['Auto-Leave', 'Half-Day Leave'] } }).lean();
     const userObj = await User.findById(employee);
-    const earnedLeavesCount = userObj ? (userObj.earnedLeaves || 0) : 0;
+    
+    if (!userObj) return res.status(404).json({ message: 'Employee not found' });
+    
+    const balances = calculateCascadingLeaves(userObj, allLeaves, allAttendances);
 
-    const balanceConfig = {
-      "Casual Leave": 3,
-      "Sick Leave": 6,
-      "Earned Leave": earnedLeavesCount
-    };
-
-    let totalUsed = usedLeaves;
-    if (type === 'Casual Leave') {
-      const Attendance = require('../models/Attendance');
-      const autoLeavesCount = await Attendance.countDocuments({ employee, status: 'Auto-Leave' });
-      const halfLeavesCount = await Attendance.countDocuments({ employee, status: 'Half-Day Leave' });
-      totalUsed += autoLeavesCount + (halfLeavesCount * 0.5);
-    }
-
-    const maxDays = balanceConfig[type] || 0;
-    const remainingDays = Math.max(0, maxDays - totalUsed);
+    let remainingDays = 0;
+    if (type === 'Casual Leave') remainingDays = balances.casual.remaining;
+    else if (type === 'Sick Leave') remainingDays = balances.sick.remaining;
+    else if (type === 'Earned Leave') remainingDays = balances.earned.remaining;
 
     let leavesToCreate = [];
 
@@ -288,12 +276,7 @@ router.post('/leaves', upload.single('attachment'), async (req, res) => {
       let excess = days - remainingDays;
 
       if (type !== 'Earned Leave') {
-        const earnedLeavesCount = userObj ? (userObj.earnedLeaves || 0) : 0;
-        const earnedUsedLeaves = leaves
-          .filter(l => l.type === 'Earned Leave' && (l.status === 'Approved' || l.status === 'Pending'))
-          .reduce((acc, curr) => acc + (curr.days || 0), 0);
-        const earnedRemaining = Math.max(0, earnedLeavesCount - earnedUsedLeaves);
-
+        const earnedRemaining = balances.earned.remaining;
         if (earnedRemaining > 0) {
           const toEarned = Math.min(excess, earnedRemaining);
           leavesToCreate.push({
