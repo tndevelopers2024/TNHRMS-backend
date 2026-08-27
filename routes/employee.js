@@ -10,6 +10,7 @@ const Payslip = require('../models/Payslip');
 const Holiday = require('../models/Holiday');
 const { sendStylishEmail } = require('../utils/emailService');
 const upload = require('../utils/upload');
+const { calculateCascadingLeaves } = require('../utils/leaveCalculator');
 
 // GET all tasks for the logged-in employee
 router.get('/tasks/:userId', async (req, res) => {
@@ -115,31 +116,20 @@ router.get('/leave-balance/:userId', async (req, res) => {
     const user = await User.findById(userId).select('casualLeaves sickLeaves earnedLeaves');
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    // Count Auto-Leave and Half-Day attendance records
-    const autoLeaveCount = await Attendance.countDocuments({ employee: userId, status: 'Auto-Leave' });
-    const halfDayCount = await Attendance.countDocuments({ employee: userId, status: 'Half-Day Leave' });
+    const attendances = await Attendance.find({ employee: userId, status: { $in: ['Auto-Leave', 'Half-Day Leave'] } }).lean();
 
     // Count leave days from approved/pending Leave documents by type
     const leaves = await Leave.find({
       employee: userId,
       status: { $in: ['Approved', 'Pending'] }
-    });
+    }).lean();
 
-    const leaveByType = {};
-    for (const l of leaves) {
-      if (!leaveByType[l.type]) leaveByType[l.type] = 0;
-      leaveByType[l.type] += l.days || 0;
-    }
-
-    // Casual Leave used = approved/pending casual leaves + auto-leaves + half-day leaves
-    const casualUsed = (leaveByType['Casual Leave'] || 0) + autoLeaveCount + (halfDayCount * 0.5);
-    const sickUsed = leaveByType['Sick Leave'] || 0;
-    const earnedUsed = leaveByType['Earned Leave'] || 0;
+    const balances = calculateCascadingLeaves(user, leaves, attendances);
 
     res.json({
-      casual: { total: user.casualLeaves || 3, used: casualUsed, remaining: Math.max(0, (user.casualLeaves || 3) - casualUsed) },
-      sick:   { total: user.sickLeaves || 6,   used: sickUsed,   remaining: Math.max(0, (user.sickLeaves || 6) - sickUsed) },
-      earned: { total: user.earnedLeaves || 0,  used: earnedUsed, remaining: Math.max(0, (user.earnedLeaves || 0) - earnedUsed) },
+      casual: balances.casual,
+      sick:   balances.sick,
+      earned: balances.earned,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

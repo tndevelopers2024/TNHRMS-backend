@@ -11,6 +11,7 @@ const Payslip = require('../models/Payslip');
 const Notification = require('../models/Notification');
 const Attendance = require('../models/Attendance');
 const upload = require('../utils/upload');
+const { calculateCascadingLeaves } = require('../utils/leaveCalculator');
 // GET all employees
 router.get('/employees', async (req, res) => {
   try {
@@ -32,38 +33,19 @@ router.get('/employee-leave-balances', async (req, res) => {
       const empLeaves = leaves.filter(l => l.employee.toString() === emp._id.toString());
       const empAttendances = attendances.filter(a => a.employee.toString() === emp._id.toString());
       
-      const calcUsed = (type) => {
-        let used = empLeaves
-          .filter(l => l.type === type)
-          .reduce((acc, curr) => acc + curr.days, 0);
-          
-        if (type === 'Casual Leave') {
-          const autoLeaves = empAttendances.filter(a => a.status === 'Auto-Leave').length;
-          const halfLeaves = empAttendances.filter(a => a.status === 'Half-Day Leave').length;
-          used += autoLeaves + (halfLeaves * 0.5);
-        }
-        return used;
-      };
-
-      const totalCasual = emp.casualLeaves !== undefined ? emp.casualLeaves : 3;
-      const totalSick = emp.sickLeaves !== undefined ? emp.sickLeaves : 6;
-      const totalEarned = emp.earnedLeaves || 0;
-
-      const usedCasual = calcUsed('Casual Leave');
-      const usedSick = calcUsed('Sick Leave');
-      const usedEarned = calcUsed('Earned Leave');
+      const balances = calculateCascadingLeaves(emp, empLeaves, empAttendances);
 
       return {
         ...emp,
-        casualLeavesAvailable: Math.max(0, totalCasual - usedCasual),
-        sickLeavesAvailable: Math.max(0, totalSick - usedSick),
-        earnedLeavesAvailable: Math.max(0, totalEarned - usedEarned),
-        casualLeavesTotal: totalCasual,
-        sickLeavesTotal: totalSick,
-        earnedLeavesTotal: totalEarned,
-        casualLeavesUsed: usedCasual,
-        sickLeavesUsed: usedSick,
-        earnedLeavesUsed: usedEarned,
+        casualLeavesAvailable: balances.casual.remaining,
+        sickLeavesAvailable: balances.sick.remaining,
+        earnedLeavesAvailable: balances.earned.remaining,
+        casualLeavesTotal: balances.casual.total,
+        sickLeavesTotal: balances.sick.total,
+        earnedLeavesTotal: balances.earned.total,
+        casualLeavesUsed: balances.casual.used,
+        sickLeavesUsed: balances.sick.used,
+        earnedLeavesUsed: balances.earned.used,
       };
     });
 
@@ -407,15 +389,9 @@ router.put('/attendance/:id/mark-present', async (req, res) => {
     const record = await Attendance.findById(req.params.id);
     if (!record) return res.status(404).json({ message: 'Attendance record not found' });
 
-    // If it was Auto-Leave, refund the salary deduction
-    // (Leave balance adjusts automatically since calcUsed counts Auto-Leave records)
+    // Salary deduction refund has been removed; LOP is calculated dynamically during payroll generation.
     if (record.status === 'Auto-Leave') {
-      const user = await User.findById(record.employee);
-      if (user && user.salary) {
-        const deduction = Math.round(user.salary / 29);
-        user.salary = user.salary + deduction;
-        await user.save();
-      }
+      // Intentionally left blank as salary is no longer mutated.
     }
 
     // Mark as present and simulate 8 hours of work
@@ -818,10 +794,12 @@ router.get('/payroll', async (req, res) => {
     const endOfMonth = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59);
 
     const leaves = await Leave.find({
-      type: 'Loss of Pay',
-      status: 'Approved',
-      startDate: { $gte: startOfMonth, $lte: endOfMonth }
-    });
+      status: { $in: ['Approved', 'Pending'] }
+    }).lean();
+
+    const attendances = await Attendance.find({
+      status: { $in: ['Auto-Leave', 'Half-Day Leave'] }
+    }).lean();
 
     const payslips = await Payslip.find({ month: monthString });
 
@@ -859,7 +837,30 @@ router.get('/payroll', async (req, res) => {
 
         // Calculate dynamically based on the applicable salary
         const empLeaves = leaves.filter(l => l.employee.toString() === emp._id.toString());
-        finalLopDays = empLeaves.reduce((acc, curr) => acc + curr.days, 0);
+        const empAttendances = attendances.filter(a => a.employee.toString() === emp._id.toString());
+
+        // LOP from manual leaves exactly in this month
+        const manualLopLeavesThisMonth = empLeaves.filter(l => 
+          l.type === 'Loss of Pay' && 
+          new Date(l.startDate) >= startOfMonth && 
+          new Date(l.startDate) <= endOfMonthTarget
+        );
+        const manualLopDaysThisMonth = manualLopLeavesThisMonth.reduce((acc, curr) => acc + (curr.days || 0), 0);
+
+        // LOP from Auto-Leaves via cascading difference
+        const filterToDate = (arr, dateField, limitDate) => arr.filter(item => new Date(item[dateField]) < limitDate);
+        
+        const leavesUpToStart = filterToDate(empLeaves, 'startDate', startOfMonth);
+        const attendancesUpToStart = filterToDate(empAttendances, 'date', startOfMonth);
+        const balancesUpToStart = calculateCascadingLeaves(emp, leavesUpToStart, attendancesUpToStart);
+
+        const leavesUpToEnd = filterToDate(empLeaves, 'startDate', endOfMonthTarget);
+        const attendancesUpToEnd = filterToDate(empAttendances, 'date', endOfMonthTarget);
+        const balancesUpToEnd = calculateCascadingLeaves(emp, leavesUpToEnd, attendancesUpToEnd);
+
+        const autoLopDaysThisMonth = Math.max(0, balancesUpToEnd.lop.autoUsed - balancesUpToStart.lop.autoUsed);
+
+        finalLopDays = manualLopDaysThisMonth + autoLopDaysThisMonth;
         finalLpa = applicableSalary;
         finalMonthly = finalLpa ? Math.round(finalLpa / 12) : 0;
         const perDayLopRate = finalMonthly ? Math.round(finalMonthly / 30) : 0;

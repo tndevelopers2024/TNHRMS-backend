@@ -64,14 +64,8 @@ const processAttendanceForDate = async (dateStr) => {
     record.status = 'Auto-Leave';
     await record.save();
 
-    // Deduct salary by 1/30th (leave balance is tracked dynamically via attendance records)
-    const user = await User.findById(record.employee);
-    if (user && user.salary) {
-      const deduction = Math.round(user.salary / 30);
-      user.salary = Math.max(0, user.salary - deduction);
-      await user.save();
-      console.log(`[Attendance Cron] Missed checkout — deducted salary from ${user._id}`);
-    }
+    // Leave balance and potential LOP are tracked dynamically via attendance records
+    console.log(`[Attendance Cron] Missed checkout — marked Auto-Leave for ${record.employee}`);
   }
 
   // ── PART 2: Employees who did NOT check in at all ──
@@ -100,13 +94,8 @@ const processAttendanceForDate = async (dateStr) => {
         });
         noCheckinCount++;
 
-        // Deduct salary (leave balance is tracked dynamically via attendance records)
-        if (emp.salary) {
-          const deduction = Math.round(emp.salary / 30);
-          emp.salary = Math.max(0, emp.salary - deduction);
-          await emp.save();
-        }
-        console.log(`[Attendance Cron] No check-in — deducted salary from ${emp._id}`);
+        // Leave balance and potential LOP are tracked dynamically via attendance records
+        console.log(`[Attendance Cron] No check-in — marked Auto-Leave for ${emp._id}`);
       } catch (createErr) {
         if (createErr.code !== 11000) {
           console.error(`[Attendance Cron] Failed for ${emp._id}:`, createErr.message);
