@@ -21,9 +21,14 @@ const transporter = nodemailer.createTransport({
  * @param {string} contentHtml - Optional HTML content (e.g., custom colored box for OTP or credentials)
  * @param {string} outro - Optional closing text or call to action
  */
-const sendStylishEmail = async (to, subject, title, intro, contentHtml = '', outro = '', extraAttachments = []) => {
+const sendStylishEmail = async (to, subject, title, intro, contentHtml = '', outro = '', extraAttachments = [], options = {}) => {
+  const showCta = options.showCta !== undefined ? options.showCta : true;
+  const ctaUrl = options.ctaUrl || process.env.FRONTEND_URL || 'http://localhost:5173';
+  const ctaText = options.ctaText || 'Open App Dashboard';
+
   const mailOptions = {
-    from: process.env.EMAIL_USER,
+    from: `"Techie Nutpam" <${process.env.EMAIL_USER || 'admin@techienutpam.in'}>`,
+    replyTo: process.env.EMAIL_USER || 'admin@techienutpam.in',
     to,
     subject,
     html: `
@@ -40,9 +45,10 @@ const sendStylishEmail = async (to, subject, title, intro, contentHtml = '', out
             
             ${outro ? `<p style="color: #64748b; font-size: 15px; line-height: 1.6; text-align: center; margin-top: 30px;">${outro}</p>` : ''}
             
+            ${showCta ? `
             <div style="text-align: center; margin-top: 40px; margin-bottom: 20px;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}" style="background-color: #4f46e5; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; transition: background-color 0.2s;">Open App Dashboard</a>
-            </div>
+              <a href="${ctaUrl}" style="background-color: #4f46e5; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; transition: background-color 0.2s;">${ctaText}</a>
+            </div>` : ''}
           </div>
           <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0;">
             <img src="cid:favicon" alt="Favicon" style="max-height: 24px; vertical-align: middle; margin-right: 10px; border-radius: 4px;">
@@ -67,10 +73,12 @@ const sendStylishEmail = async (to, subject, title, intro, contentHtml = '', out
   };
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Email sent successfully to ${to}`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully to ${to}:`, info.messageId);
+    return info;
   } catch (error) {
     console.error('Error sending email:', error);
+    throw error;
   }
 };
 

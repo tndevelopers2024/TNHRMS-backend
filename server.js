@@ -42,7 +42,7 @@ io.on('connection', (socket) => {
 // Middlewares
 app.use(cors({
   origin: ['https://portal.techienutpam.in', 'http://localhost:5173', 'http://localhost:5174'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
@@ -53,6 +53,8 @@ app.use('/uploads', express.static(uploadDir));
 
 // Routes
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/admin/invoices', require('./routes/invoices'));
+app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/employee', require('./routes/employee'));
 app.use('/api/notifications', require('./routes/notifications'));

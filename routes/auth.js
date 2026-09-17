@@ -12,7 +12,9 @@ router.post('/login', async (req, res) => {
   try {
     const user = await User.findOne({ $or: [{ email: email }, { secondaryEmail: email }] });
 
-    if (user && (await user.matchPassword(password))) {
+    const isPasswordMatch = user && (await user.matchPassword(password));
+
+    if (user && isPasswordMatch) {
       if (user.isActive === false) {
         return res.status(403).json({ message: 'Account is locked. Please contact admin.' });
       }
