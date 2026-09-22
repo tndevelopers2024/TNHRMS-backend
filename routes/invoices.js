@@ -121,7 +121,15 @@ router.get('/', async (req, res) => {
       const amt = inv.totalAmount || 0;
       totalInvoiced += amt;
 
-      const effectiveStatus = inv.status || 'Pending';
+      let effectiveStatus = inv.status || 'Pending';
+      const isPastDue = effectiveStatus !== 'Paid' && 
+                        effectiveStatus !== 'Cancelled' && 
+                        inv.dueDate && 
+                        new Date(inv.dueDate) < now;
+
+      if (effectiveStatus !== 'Paid' && effectiveStatus !== 'Cancelled' && isPastDue) {
+        effectiveStatus = 'Overdue';
+      }
 
       if (effectiveStatus === 'Paid') {
         totalPaid += amt;
@@ -191,6 +199,7 @@ router.post('/', async (req, res) => {
       paymentDetails,
       notes,
       terms,
+      extraFields,
       createdBy,
     } = req.body;
 
@@ -264,6 +273,7 @@ router.post('/', async (req, res) => {
       paymentDetails,
       notes,
       terms,
+      extraFields,
       createdBy,
     });
 
@@ -299,6 +309,7 @@ router.put('/:id', async (req, res) => {
       paymentDetails,
       notes,
       terms,
+      extraFields,
     } = req.body;
 
     const invoice = await Invoice.findById(req.params.id);
@@ -353,6 +364,7 @@ router.put('/:id', async (req, res) => {
     if (paymentDetails) invoice.paymentDetails = paymentDetails;
     if (notes !== undefined) invoice.notes = notes;
     if (terms !== undefined) invoice.terms = terms;
+    if (extraFields !== undefined) invoice.extraFields = extraFields;
 
     const updated = await invoice.save();
     res.json(updated);

@@ -53,6 +53,7 @@ app.use('/uploads', express.static(uploadDir));
 
 // Routes
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/admin/settings', require('./routes/settings'));
 app.use('/api/admin/invoices', require('./routes/invoices'));
 app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/auth', require('./routes/auth'));

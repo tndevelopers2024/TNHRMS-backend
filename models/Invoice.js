@@ -91,6 +91,12 @@ const invoiceSchema = new mongoose.Schema(
     },
     notes: { type: String, default: 'Thank you for your business!' },
     terms: { type: String, default: 'Payment is due within the stipulated date. Goods/services once provided are subject to our standard terms.' },
+    extraFields: [
+      {
+        label: { type: String },
+        value: { type: String }
+      }
+    ],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

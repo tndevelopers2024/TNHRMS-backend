@@ -450,7 +450,46 @@ const generateInvoicePdf = (invoice) => {
         leftBottomY += 96;
       }
 
-      if (invoice.terms) {
+      if (invoice.extraFields && invoice.extraFields.length > 0) {
+        invoice.extraFields.forEach((field) => {
+          if (!field.label && !field.value) return;
+          
+          doc
+            .font('Helvetica')
+            .fontSize(7.5)
+            .fillColor('#64748b');
+          
+          const textHeight = doc.heightOfString(field.value || '', {
+            width: splitLeftW - 16,
+            lineGap: 1.5,
+          });
+          const boxHeight = Math.max(textHeight + 25, 40);
+
+          doc
+            .roundedRect(startX, leftBottomY, splitLeftW, boxHeight, 6)
+            .fillColor('#f8fafc')
+            .strokeColor('#e2e8f0')
+            .lineWidth(0.75)
+            .fillAndStroke();
+
+          doc
+            .font('Helvetica-Bold')
+            .fontSize(7.5)
+            .fillColor('#475569')
+            .text((field.label || '').toUpperCase(), startX + 8, leftBottomY + 7);
+
+          doc
+            .font('Helvetica')
+            .fontSize(7.5)
+            .fillColor('#64748b')
+            .text(field.value || '', startX + 8, leftBottomY + 18, {
+              width: splitLeftW - 16,
+              lineGap: 1.5,
+            });
+
+          leftBottomY += boxHeight + 8;
+        });
+      } else if (invoice.terms) {
         doc
           .roundedRect(startX, leftBottomY, splitLeftW, 50, 6)
           .fillColor('#f8fafc')
