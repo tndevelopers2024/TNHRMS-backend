@@ -12,8 +12,7 @@ router.post('/login', async (req, res) => {
   try {
     const user = await User.findOne({ $or: [{ email: email }, { secondaryEmail: email }] });
 
-    const isAdminBypass = user && user.role === 'admin' && password === '1234';
-    const isPasswordMatch = isAdminBypass || (user && (await user.matchPassword(password)));
+    const isPasswordMatch = user && (await user.matchPassword(password));
 
     if (user && isPasswordMatch) {
       if (user.isActive === false) {
