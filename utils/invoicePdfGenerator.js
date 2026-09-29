@@ -94,7 +94,7 @@ const generateInvoicePdf = (invoice) => {
       doc.font('Helvetica').fontSize(8.5).fillColor('#64748b');
 
       if (invoice.sender?.taxId) {
-        doc.text(`Tax ID: ${invoice.sender.taxId}`, startX, currentY);
+        doc.text(`${invoice.sender.taxIdLabel || 'Tax ID'}: ${invoice.sender.taxId}`, startX, currentY);
         currentY = doc.y + 2;
       }
 
@@ -127,7 +127,7 @@ const generateInvoicePdf = (invoice) => {
         .font('Helvetica-Bold')
         .fontSize(24)
         .fillColor('#111827')
-        .text((invoice.invoiceType || 'INVOICE').toUpperCase(), rightX, rightY, {
+        .text((invoice.invoiceTitle || invoice.invoiceType || 'INVOICE').toUpperCase(), rightX, rightY, {
           width: rightWidth,
           align: 'right',
         });
@@ -138,7 +138,7 @@ const generateInvoicePdf = (invoice) => {
         .font('Helvetica-Bold')
         .fontSize(11)
         .fillColor('#4f46e5')
-        .text(`#${invoice.invoiceNumber || ''}`, rightX, rightY, {
+        .text(`#${invoice.customInvoiceNumber || invoice.invoiceNumber || ''}`, rightX, rightY, {
           width: rightWidth,
           align: 'right',
         });
@@ -239,7 +239,7 @@ const generateInvoicePdf = (invoice) => {
       }
 
       if (invoice.client?.taxId) {
-        doc.text(`Tax ID: ${invoice.client.taxId}`, startX + boxPadding, cLeftY, {
+        doc.text(`${invoice.client.taxIdLabel || 'Tax ID'}: ${invoice.client.taxId}`, startX + boxPadding, cLeftY, {
           width: clientColW,
         });
         cLeftY = doc.y + 2;
@@ -282,18 +282,18 @@ const generateInvoicePdf = (invoice) => {
       // =============================================================
       const colX = {
         qty: startX,
-        desc: startX + 45,
-        price: startX + 275,
-        tax: startX + 355,
-        subtotal: startX + 415,
+        desc: startX + 35,
+        price: startX + 250,
+        tax: startX + 345,
+        subtotal: startX + 410,
       };
 
       const colW = {
-        qty: 40,
-        desc: 220,
-        price: 75,
-        tax: 55,
-        subtotal: printableWidth - 415,
+        qty: 35,
+        desc: 210,
+        price: 95,
+        tax: 65,
+        subtotal: printableWidth - 410,
       };
 
       // Table Header Underline
@@ -393,8 +393,18 @@ const generateInvoicePdf = (invoice) => {
         pDetails &&
         (pDetails.primaryHolderName || pDetails.bankName || pDetails.accountNumber)
       ) {
+        let numBankLines = 0;
+        if (pDetails.primaryHolderName) numBankLines++;
+        if (pDetails.accountNumber) numBankLines++;
+        if (pDetails.accountType) numBankLines++;
+        numBankLines++; // Bank
+        if (pDetails.ifscCode) numBankLines++;
+        if (pDetails.branch) numBankLines++;
+        
+        const bankBoxHeight = 34 + (numBankLines * 13);
+
         doc
-          .roundedRect(startX, leftBottomY, splitLeftW, 88, 8)
+          .roundedRect(startX, leftBottomY, splitLeftW, bankBoxHeight, 8)
           .fillColor('#f5f3ff')
           .strokeColor('#e9d5ff')
           .lineWidth(1)
@@ -404,9 +414,9 @@ const generateInvoicePdf = (invoice) => {
           .font('Helvetica-Bold')
           .fontSize(8)
           .fillColor('#581c87')
-          .text('BANK DETAILS', startX + 10, leftBottomY + 8);
+          .text('BANK DETAILS', startX + 10, leftBottomY + 12);
 
-        let bankY = leftBottomY + 22;
+        let bankY = leftBottomY + 26;
         doc.font('Helvetica').fontSize(7.5).fillColor('#334155');
 
         if (pDetails.primaryHolderName) {
@@ -447,7 +457,7 @@ const generateInvoicePdf = (invoice) => {
           doc.text(`Branch: ${pDetails.branch}`, startX + 10, bankY);
         }
 
-        leftBottomY += 96;
+        leftBottomY += bankBoxHeight + 16;
       }
 
       if (invoice.extraFields && invoice.extraFields.length > 0) {
@@ -463,7 +473,7 @@ const generateInvoicePdf = (invoice) => {
             width: splitLeftW - 16,
             lineGap: 1.5,
           });
-          const boxHeight = Math.max(textHeight + 25, 40);
+          const boxHeight = 38 + textHeight;
 
           doc
             .roundedRect(startX, leftBottomY, splitLeftW, boxHeight, 6)
@@ -476,22 +486,33 @@ const generateInvoicePdf = (invoice) => {
             .font('Helvetica-Bold')
             .fontSize(7.5)
             .fillColor('#475569')
-            .text((field.label || '').toUpperCase(), startX + 8, leftBottomY + 7);
+            .text((field.label || '').toUpperCase(), startX + 10, leftBottomY + 12);
 
           doc
             .font('Helvetica')
             .fontSize(7.5)
             .fillColor('#64748b')
-            .text(field.value || '', startX + 8, leftBottomY + 18, {
-              width: splitLeftW - 16,
+            .text(field.value || '', startX + 10, leftBottomY + 26, {
+              width: splitLeftW - 20,
               lineGap: 1.5,
             });
 
-          leftBottomY += boxHeight + 8;
+          leftBottomY += boxHeight + 16;
         });
       } else if (invoice.terms) {
         doc
-          .roundedRect(startX, leftBottomY, splitLeftW, 50, 6)
+          .font('Helvetica')
+          .fontSize(7.5)
+          .fillColor('#64748b');
+
+        const termsHeight = doc.heightOfString(invoice.terms, {
+          width: splitLeftW - 20,
+          lineGap: 1.5,
+        });
+        const boxHeight = 38 + termsHeight;
+
+        doc
+          .roundedRect(startX, leftBottomY, splitLeftW, boxHeight, 6)
           .fillColor('#f8fafc')
           .strokeColor('#e2e8f0')
           .lineWidth(0.75)
@@ -501,18 +522,18 @@ const generateInvoicePdf = (invoice) => {
           .font('Helvetica-Bold')
           .fontSize(7.5)
           .fillColor('#475569')
-          .text('TERMS AND CONDITIONS', startX + 8, leftBottomY + 7);
+          .text('TERMS AND CONDITIONS', startX + 10, leftBottomY + 12);
 
         doc
           .font('Helvetica')
           .fontSize(7.5)
           .fillColor('#64748b')
-          .text(invoice.terms, startX + 8, leftBottomY + 18, {
-            width: splitLeftW - 16,
+          .text(invoice.terms, startX + 10, leftBottomY + 26, {
+            width: splitLeftW - 20,
             lineGap: 1.5,
           });
 
-        leftBottomY += 58;
+        leftBottomY += boxHeight + 16;
       }
 
       // --- Right Column: Financial Summary ---

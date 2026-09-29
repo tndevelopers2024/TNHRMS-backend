@@ -29,6 +29,7 @@ router.get('/profile/:userId', async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json(user);
   } catch (err) {
+    console.error("ERROR IN PROFILE ROUTE:", err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -105,6 +106,7 @@ router.get('/attendance/:userId', async (req, res) => {
     const records = await Attendance.find({ employee: req.params.userId }).sort({ date: -1 });
     res.json(records);
   } catch (err) {
+    console.error("ERROR IN ATTENDANCE ROUTE:", err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -378,6 +380,7 @@ router.get('/holidays', async (req, res) => {
     const holidays = await Holiday.find().sort({ date: 1 });
     res.json(holidays);
   } catch (err) {
+    console.error("ERROR IN HOLIDAYS ROUTE:", err);
     res.status(500).json({ message: err.message });
   }
 });

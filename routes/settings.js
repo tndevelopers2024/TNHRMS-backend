@@ -24,12 +24,13 @@ router.get('/company', async (req, res) => {
 // @access  Public
 router.put('/company', async (req, res) => {
   try {
-    const { companyName, taxId, address, postalCode, phone, email, logoUrl } = req.body;
+    const { companyName, taxId, taxIdLabel, address, postalCode, phone, email, logoUrl } = req.body;
     let settings = await CompanySettings.findOne();
     
     if (settings) {
       settings.companyName = companyName !== undefined ? companyName : settings.companyName;
       settings.taxId = taxId !== undefined ? taxId : settings.taxId;
+      settings.taxIdLabel = taxIdLabel !== undefined ? taxIdLabel : settings.taxIdLabel;
       settings.address = address !== undefined ? address : settings.address;
       settings.postalCode = postalCode !== undefined ? postalCode : settings.postalCode;
       settings.phone = phone !== undefined ? phone : settings.phone;
@@ -40,6 +41,7 @@ router.put('/company', async (req, res) => {
       settings = await CompanySettings.create({
         companyName,
         taxId,
+        taxIdLabel,
         address,
         postalCode,
         phone,

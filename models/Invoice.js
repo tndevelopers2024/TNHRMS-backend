@@ -15,10 +15,20 @@ const invoiceSchema = new mongoose.Schema(
       enum: ['Invoice', 'Tax Invoice', 'Proforma Invoice'],
       default: 'Invoice',
     },
+    invoiceTitle: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     invoiceNumber: {
       type: String,
       required: true,
       unique: true,
+      trim: true,
+    },
+    customInvoiceNumber: {
+      type: String,
+      default: '',
       trim: true,
     },
     orderNumber: {
@@ -46,6 +56,7 @@ const invoiceSchema = new mongoose.Schema(
       name: { type: String, required: true, default: 'Techie Nutpam' },
       companyName: { type: String, default: 'Techie Nutpam' },
       taxId: { type: String, default: '' },
+      taxIdLabel: { type: String, default: 'Tax ID' },
       gstin: { type: String, default: '' },
       address: { type: String, default: 'Tamil Nadu, India' },
       postalCode: { type: String, default: '' },
@@ -59,6 +70,7 @@ const invoiceSchema = new mongoose.Schema(
       name: { type: String, required: true },
       companyName: { type: String, default: '' },
       taxId: { type: String, default: '' },
+      taxIdLabel: { type: String, default: 'Tax ID' },
       gstin: { type: String, default: '' },
       address: { type: String, default: '' },
       postalCode: { type: String, default: '' },

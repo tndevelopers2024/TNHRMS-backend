@@ -183,7 +183,9 @@ router.post('/', async (req, res) => {
   try {
     const {
       invoiceType = 'Invoice',
+      invoiceTitle = '',
       invoiceNumber,
+      customInvoiceNumber = '',
       orderNumber = '',
       format = 'Standard',
       client,
@@ -254,7 +256,9 @@ router.post('/', async (req, res) => {
 
     const newInvoice = new Invoice({
       invoiceType,
+      invoiceTitle,
       invoiceNumber: finalInvoiceNumber,
+      customInvoiceNumber,
       orderNumber,
       format,
       client,
@@ -293,7 +297,9 @@ router.put('/:id', async (req, res) => {
   try {
     const {
       invoiceType,
+      invoiceTitle,
       invoiceNumber,
+      customInvoiceNumber,
       orderNumber,
       format,
       client,
@@ -351,7 +357,9 @@ router.put('/:id', async (req, res) => {
     }
 
     if (invoiceType) invoice.invoiceType = invoiceType;
+    if (invoiceTitle !== undefined) invoice.invoiceTitle = invoiceTitle;
     if (invoiceNumber) invoice.invoiceNumber = invoiceNumber;
+    if (customInvoiceNumber !== undefined) invoice.customInvoiceNumber = customInvoiceNumber;
     if (orderNumber !== undefined) invoice.orderNumber = orderNumber;
     if (format) invoice.format = format;
     if (client) invoice.client = client;

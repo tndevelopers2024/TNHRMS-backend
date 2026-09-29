@@ -4,6 +4,7 @@ const companySettingsSchema = new mongoose.Schema(
   {
     companyName: { type: String, default: 'Techie Nutpam' },
     taxId: { type: String, default: '' },
+    taxIdLabel: { type: String, default: 'Tax ID / GSTIN' },
     address: { type: String, default: 'Tamil Nadu, India' },
     postalCode: { type: String, default: '' },
     phone: { type: String, default: '+91 98765 43210' },
